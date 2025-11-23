@@ -161,4 +161,25 @@ describe('stream', () => {
       { type: 'result', name: 'cathy' },
     ])
   })
+
+  it('should surface handler errors through receiveEventError payload', async () => {
+    const ctx = createContext()
+    const events = defineInvokeEventa<string, void>()
+    const emittedError = new Error('stream handler failure')
+
+    defineStreamInvokeHandler(ctx, events, () => {
+      return (async function* () {
+        throw emittedError
+      }())
+    })
+
+    const invoke = defineStreamInvoke(ctx, events)
+    const stream = invoke()
+
+    await expect(async () => {
+      for await (const _ of stream) {
+        // consume to trigger error
+      }
+    }).rejects.toBe(emittedError)
+  })
 })
