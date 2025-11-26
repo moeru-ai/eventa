@@ -39,12 +39,12 @@ export function defineStreamInvoke<
           if (!payload.body) {
             return
           }
-        if (payload.body.invokeId !== invokeId) {
-          return
-        }
+          if (payload.body.invokeId !== invokeId) {
+            return
+          }
 
-        controller.error(payload.body.content.error as ResErr)
-      })
+          controller.error(payload.body.content.error as ResErr)
+        })
         clientCtx.on(invokeReceiveEventStreamEnd, (payload) => {
           if (!payload.body) {
             return
