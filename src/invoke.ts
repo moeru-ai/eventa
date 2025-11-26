@@ -126,7 +126,7 @@ export function defineInvoke<
       mInvokeIdPromiseRejectors.set(invokeId, reject)
 
       const invokeReceiveEvent = defineEventa(`${event.receiveEvent.id}-${invokeId}`) as ReceiveEvent<Res>
-      const invokeReceiveEventError = defineEventa(`${event.receiveEventError.id}-${invokeId}`) as ReceiveEventError<ResErr>
+      const invokeReceiveEventError = defineEventa(`${event.receiveEventError.id}-${invokeId}`) as ReceiveEventError<Res, Req, ResErr, ReqErr>
 
       ctx.on(invokeReceiveEvent, (payload) => {
         if (!payload.body) {
@@ -231,8 +231,8 @@ export function defineInvokeHandler<
       catch (error) {
         // TODO: to error object
         ctx.emit(
-          { ...defineEventa(`${event.receiveEventError.id}-${payload.body.invokeId}`), invokeType: event.receiveEventError.invokeType } as ReceiveEventError<ResErr>,
-          { ...payload.body, content: error as any },
+          { ...defineEventa(`${event.receiveEventError.id}-${payload.body.invokeId}`), invokeType: event.receiveEventError.invokeType } as ReceiveEventError<Res, Req, ResErr, ReqErr>,
+          { ...payload.body, content: { error: error as ResErr } },
           options,
         )
       }

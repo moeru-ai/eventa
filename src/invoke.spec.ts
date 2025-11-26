@@ -29,9 +29,21 @@ describe('invoke', () => {
 
     const invoke = defineInvoke(ctx, events)
 
-    await expect(() => invoke({ name: 'alice', age: 25 }))
-      .rejects
-      .toThrowError('Error processing request for alice aged 25')
+    await expect(invoke({ name: 'alice', age: 25 })).rejects.toThrowError('Error processing request for alice aged 25')
+  })
+
+  it('should reject with the same error emitted in receiveEventError payload', async () => {
+    const ctx = createContext()
+    const events = defineInvokeEventa<void, void>()
+    const emittedError = new Error('invoke handler failed')
+
+    defineInvokeHandler(ctx, events, () => {
+      throw emittedError
+    })
+
+    const invoke = defineInvoke(ctx, events)
+
+    await expect(invoke()).rejects.toBe(emittedError)
   })
 
   it('should handle multiple concurrent invokes', async () => {

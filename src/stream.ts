@@ -20,7 +20,7 @@ export function defineStreamInvoke<
     const invokeId = nanoid()
 
     const invokeReceiveEvent = defineEventa(`${event.receiveEvent.id}-${invokeId}`) as ReceiveEvent<Res>
-    const invokeReceiveEventError = defineEventa(`${event.receiveEventError.id}-${invokeId}`) as ReceiveEventError<ResErr>
+    const invokeReceiveEventError = defineEventa(`${event.receiveEventError.id}-${invokeId}`) as ReceiveEventError<Res, Req, ResErr, ReqErr>
     const invokeReceiveEventStreamEnd = defineEventa(`${event.receiveEventStreamEnd.id}-${invokeId}`) as ReceiveEventStreamEnd<Res>
 
     const stream = new ReadableStream<Res>({
@@ -39,12 +39,12 @@ export function defineStreamInvoke<
           if (!payload.body) {
             return
           }
-          if (payload.body.invokeId !== invokeId) {
-            return
-          }
+        if (payload.body.invokeId !== invokeId) {
+          return
+        }
 
-          controller.error(payload.body.content as ResErr)
-        })
+        controller.error(payload.body.content.error as ResErr)
+      })
         clientCtx.on(invokeReceiveEventStreamEnd, (payload) => {
           if (!payload.body) {
             return
@@ -95,7 +95,7 @@ export function defineStreamInvokeHandler<
     }
 
     const invokeReceiveEvent = defineEventa(`${event.receiveEvent.id}-${payload.body.invokeId}`) as ReceiveEvent<Res>
-    const invokeReceiveEventError = defineEventa(`${event.receiveEventError.id}-${payload.body.invokeId}`) as ReceiveEventError<ResErr>
+    const invokeReceiveEventError = defineEventa(`${event.receiveEventError.id}-${payload.body.invokeId}`) as ReceiveEventError<Res, Req, ResErr, ReqErr>
     const invokeReceiveEventStreamEnd = defineEventa(`${event.receiveEventStreamEnd.id}-${payload.body.invokeId}`) as ReceiveEventStreamEnd<Res>
 
     try {
@@ -107,7 +107,7 @@ export function defineStreamInvokeHandler<
       serverCtx.emit(invokeReceiveEventStreamEnd, { ...payload.body, content: undefined }, options) // emit: event_stream_end
     }
     catch (error) {
-      serverCtx.emit(invokeReceiveEventError, { ...payload.body, content: error as any }, options) // emit: event_response with error
+      serverCtx.emit(invokeReceiveEventError, { ...payload.body, content: { error: error as ResErr } }, options) // emit: event_response with error
     }
   })
 }
