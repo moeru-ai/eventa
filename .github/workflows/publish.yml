@@ -21,23 +21,17 @@ jobs:
       - uses: pnpm/action-setup@v4
         with:
           run_install: false
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v5
         with:
           cache: pnpm
           node-version: latest
           registry-url: https://registry.npmjs.org
-      # npm 11.5.1 or later is required so update to latest to use OIDC trusted publisher
-      # https://github.com/eslint/config-inspector/pull/174/files
-      # https://github.com/e18e/ecosystem-issues/issues/201
-      - run: npm install -g npm@latest
       - run: pnpm i
       - run: pnpm dlx changelogithub
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - run: pnpm build
-      # --tag required here, otherwise, npm may fail to publish due to:
-      # npm error You must specify a tag using --tag when publishing a prerelease version.
-      #
-      # This wasn't happening for https://github.com/moeru-ai/xsai/blob/main/.github/workflows/publish.yml when
-      # no OIDC / trusted publisher was set up, probably bug or quirk of npm.
-      - run: pnpm publish --no-git-checks --access public --tag "latest"
+      - run: pnpm publish --no-git-checks --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_CONFIG_PROVENANCE: true
