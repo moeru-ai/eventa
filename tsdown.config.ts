@@ -3,6 +3,7 @@ import { defineConfig } from 'tsdown'
 export default defineConfig({
   entry: {
     'index': 'src/index.ts',
+    'adapters/broadcast-channel/index': 'src/adapters/broadcast-channel/index.ts',
     'adapters/electron/main': 'src/adapters/electron/main.ts',
     'adapters/electron/renderer': 'src/adapters/electron/renderer.ts',
     'adapters/event-emitter/index': 'src/adapters/event-emitter/index.ts',
