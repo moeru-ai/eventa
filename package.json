@@ -106,22 +106,22 @@
     }
   },
   "dependencies": {
-    "nanoid": "^5.1.6",
-    "picomatch": "^4.0.3"
+    "nanoid": "catalog:",
+    "picomatch": "catalog:"
   },
   "devDependencies": {
-    "@antfu/eslint-config": "^6.4.1",
-    "@electron-toolkit/preload": "^3.0.2",
-    "@types/node": "^24.10.1",
-    "@vitest/web-worker": "^4.0.15",
-    "bumpp": "^10.3.2",
-    "crossws": "^0.4.1",
-    "eslint": "^9.39.1",
-    "taze": "^19.9.2",
-    "tsdown": "^0.16.8",
-    "typescript": "^5.9.3",
-    "unplugin-unused": "^0.5.6",
-    "vite": "^7.2.6",
-    "vitest": "^4.0.15"
+    "@antfu/eslint-config": "catalog:",
+    "@electron-toolkit/preload": "catalog:",
+    "@types/node": "catalog:",
+    "@vitest/web-worker": "catalog:",
+    "bumpp": "catalog:",
+    "crossws": "catalog:",
+    "eslint": "catalog:",
+    "taze": "catalog:",
+    "tsdown": "catalog:",
+    "typescript": "catalog:",
+    "unplugin-unused": "catalog:",
+    "vite": "catalog:",
+    "vitest": "catalog:"
   }
 }
