@@ -2,7 +2,7 @@
   "name": "@moeru/eventa",
   "type": "module",
   "version": "1.0.0-alpha.7",
-  "packageManager": "pnpm@10.23.0",
+  "packageManager": "pnpm@10.24.0",
   "description": "Events are all you need",
   "author": {
     "name": "RainbowBird",
@@ -110,18 +110,18 @@
     "picomatch": "^4.0.3"
   },
   "devDependencies": {
-    "@antfu/eslint-config": "^6.2.0",
+    "@antfu/eslint-config": "^6.4.1",
     "@electron-toolkit/preload": "^3.0.2",
     "@types/node": "^24.10.1",
-    "@vitest/web-worker": "^4.0.13",
-    "bumpp": "^10.3.1",
+    "@vitest/web-worker": "^4.0.15",
+    "bumpp": "^10.3.2",
     "crossws": "^0.4.1",
     "eslint": "^9.39.1",
-    "taze": "^19.9.0",
-    "tsdown": "^0.16.6",
+    "taze": "^19.9.2",
+    "tsdown": "^0.16.8",
     "typescript": "^5.9.3",
     "unplugin-unused": "^0.5.6",
-    "vite": "^7.2.4",
-    "vitest": "^4.0.13"
+    "vite": "^7.2.6",
+    "vitest": "^4.0.15"
   }
 }
