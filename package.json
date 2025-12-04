@@ -36,6 +36,11 @@
       "import": "./dist/adapters/event-emitter/index.mjs",
       "default": "./dist/adapters/event-emitter/index.mjs"
     },
+    "./adapters/broadcast-channel": {
+      "type": "./dist/adapters/broadcast-channel/index.mts",
+      "import": "./dist/adapters/broadcast-channel/index.mjs",
+      "default": "./dist/adapters/broadcast-channel/index.mjs"
+    },
     "./adapters/event-target": {
       "type": "./dist/adapters/event-target/index.mts",
       "import": "./dist/adapters/event-target/index.mjs",
