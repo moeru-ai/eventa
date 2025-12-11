@@ -37,7 +37,7 @@ type ExtractInvokeResponse<EC extends EventContext<any, any>>
     : undefined
 
 export type InvokeFunction<Res, Req, EC extends EventContext<any, any>>
-  = Req extends undefined
+  = [Req] extends [undefined]
     ? IsInvokeRequestOptional<EC> extends true
       ? (req?: Req, invokeRequest?: ExtractInvokeRequest<EC>) => Promise<Res>
       : (req: Req, invokeRequest: ExtractInvokeRequest<EC>) => Promise<Res>

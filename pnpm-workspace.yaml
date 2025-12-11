@@ -1,15 +1,8 @@
-trustPolicy: no-downgrade
-trustPolicyExclude:
-  - chokidar@4.0.3
-shellEmulator: true
-cleanupUnusedCatalogs: true
-catalogMode: prefer
-onlyBuiltDependencies:
-  - esbuild
 catalog:
   '@antfu/eslint-config': ^6.4.1
   '@electron-toolkit/preload': ^3.0.2
   '@types/node': ^24.10.1
+  '@vitest/coverage-v8': ^4.0.15
   '@vitest/web-worker': ^4.0.15
   bumpp: ^10.3.2
   crossws: ^0.4.1
@@ -22,3 +15,18 @@ catalog:
   unplugin-unused: ^0.5.6
   vite: ^7.2.6
   vitest: ^4.0.15
+
+catalogMode: prefer
+
+cleanupUnusedCatalogs: true
+
+onlyBuiltDependencies:
+  - esbuild
+
+shellEmulator: true
+
+trustPolicy: no-downgrade
+
+trustPolicyExclude:
+  - chokidar@4.0.3
+  - semver@6.3.1

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, expectTypeOf, it, vi } from 'vitest'
 
 import { createContext } from './context'
 import { defineInvoke, defineInvokeHandler, defineInvokeHandlers, defineInvokes, undefineInvokeHandler } from './invoke'
@@ -191,5 +191,29 @@ describe('invoke-type-safety', () => {
     const invoke = defineInvoke(clientCtx, events)
 
     expect(typeof invoke).toBe('function')
+  })
+
+  it('should return functions with correct types from defineInvoke when Req is a union type', () => {
+    interface A { readonly __brand: unique symbol }
+    interface B { readonly __brand: unique symbol }
+    interface C { readonly __brand: unique symbol }
+
+    const context = createContext()
+    const invokeEventa = defineInvokeEventa<C, A | B>()
+    const invoke = defineInvoke(context, invokeEventa)
+
+    expectTypeOf(invoke).toEqualTypeOf<(req: A | B, invokeRequest?: unknown) => Promise<C>>()
+  })
+
+  it('should return functions with correct types from defineInvoke when Res is a union type', () => {
+    interface A { readonly __brand: unique symbol }
+    interface B { readonly __brand: unique symbol }
+    interface C { readonly __brand: unique symbol }
+
+    const context = createContext()
+    const invokeEventa = defineInvokeEventa<A | B, C>()
+    const invoke = defineInvoke(context, invokeEventa)
+
+    expectTypeOf(invoke).toEqualTypeOf<(req: C, invokeRequest?: unknown) => Promise<A | B>>()
   })
 })
