@@ -1,19 +1,19 @@
 catalog:
-  '@antfu/eslint-config': ^6.4.1
+  '@antfu/eslint-config': ^6.7.1
   '@electron-toolkit/preload': ^3.0.2
-  '@types/node': ^24.10.1
+  '@types/node': ^25.0.2
   '@vitest/coverage-v8': ^4.0.15
   '@vitest/web-worker': ^4.0.15
   bumpp: ^10.3.2
   crossws: ^0.4.1
-  eslint: ^9.39.1
+  eslint: ^9.39.2
   nanoid: ^5.1.6
   picomatch: ^4.0.3
   taze: ^19.9.2
-  tsdown: ^0.17.0-beta.6
+  tsdown: ^0.17.4
   typescript: ^5.9.3
   unplugin-unused: ^0.5.6
-  vite: ^7.2.6
+  vite: ^7.2.7
   vitest: ^4.0.15
 
 catalogMode: prefer
@@ -21,6 +21,7 @@ catalogMode: prefer
 cleanupUnusedCatalogs: true
 
 onlyBuiltDependencies:
+  - electron
   - esbuild
 
 shellEmulator: true
