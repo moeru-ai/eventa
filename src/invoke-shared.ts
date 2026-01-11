@@ -39,6 +39,26 @@ export interface InvokeEventa<Res, Req = undefined, ResErr = Error, ReqErr = Err
   receiveEventStreamEnd: ReceiveEventStreamEnd<Res, Req, ResErr, ReqErr>
 }
 
+export type InferSendEvent<T> = T extends { sendEvent: SendEvent<infer Res, infer Req, infer ResErr, infer ReqErr> }
+  ? SendEvent<Res, Req, ResErr, ReqErr>
+  : never
+
+export type InferSendEventError<T> = T extends { sendEventError: SendEventError<infer Res, infer Req, infer ResErr, infer ReqErr> }
+  ? SendEventError<Res, Req, ResErr, ReqErr>
+  : never
+
+export type InferReceiveEvent<T> = T extends { receiveEvent: ReceiveEvent<infer Res, infer Req, infer ResErr, infer ReqErr> }
+  ? ReceiveEvent<Res, Req, ResErr, ReqErr>
+  : never
+
+export type InferReceiveEventError<T> = T extends { receiveEventError: ReceiveEventError<infer Res, infer Req, infer ResErr, infer ReqErr> }
+  ? ReceiveEventError<Res, Req, ResErr, ReqErr>
+  : never
+
+export type InferReceiveEventStreamEnd<T> = T extends { receiveEventStreamEnd: ReceiveEventStreamEnd<infer Res, infer Req, infer ResErr, infer ReqErr> }
+  ? ReceiveEventStreamEnd<Res, Req, ResErr, ReqErr>
+  : never
+
 export function defineInvokeEventa<Res, Req = undefined, ResErr = Error, ReqErr = Error>(tag?: string) {
   if (!tag) {
     tag = nanoid()
