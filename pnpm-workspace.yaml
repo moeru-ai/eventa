@@ -1,6 +1,7 @@
 catalog:
   '@antfu/eslint-config': ^6.7.1
   '@electron-toolkit/preload': ^3.0.2
+  '@moeru/std': 0.1.0-beta.15
   '@types/node': ^25.0.2
   '@vitest/coverage-v8': ^4.0.15
   '@vitest/web-worker': ^4.0.15

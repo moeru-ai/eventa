@@ -7,7 +7,7 @@ import type {
 } from './invoke-shared'
 
 import { defineEventa, nanoid } from './eventa'
-import { isAsyncIterable, isReadableStream } from './utils'
+import { createAbortError, isAbortError, isAsyncIterable, isReadableStream } from './utils'
 
 /**
  * Create a stream invoke function (client side).
@@ -55,8 +55,10 @@ export function defineStreamInvoke<
   E = any,
   EO = any,
 >(clientCtx: EventContext<E, EO>, event: InvokeEventa<Res, Req, ResErr, ReqErr>) {
-  return (req: Req | ReadableStream<Req> | AsyncIterable<Req>) => {
+  return (req: Req | ReadableStream<Req> | AsyncIterable<Req>, options?: { signal?: AbortSignal } & EO) => {
     const invokeId = nanoid()
+    const { signal, ...emitOptions } = (options ?? {}) as { signal?: AbortSignal } & Record<string, any>
+    let onAbort: (() => void) | undefined
 
     const invokeReceiveEvent = defineEventa(`${event.receiveEvent.id}-${invokeId}`) as ReceiveEvent<Res>
     const invokeReceiveEventError = defineEventa(`${event.receiveEventError.id}-${invokeId}`) as ReceiveEventError<Res, Req, ResErr, ReqErr>
@@ -64,6 +66,21 @@ export function defineStreamInvoke<
 
     const stream = new ReadableStream<Res>({
       start(controller) {
+        const cleanup = () => {
+          clientCtx.off(invokeReceiveEvent)
+          clientCtx.off(invokeReceiveEventError)
+          clientCtx.off(invokeReceiveEventStreamEnd)
+          if (signal && onAbort) {
+            signal.removeEventListener('abort', onAbort)
+          }
+        }
+
+        onAbort = () => {
+          clientCtx.emit(event.sendEventAbort, { invokeId, content: signal?.reason }, emitOptions as any)
+          controller.error(createAbortError(signal?.reason))
+          cleanup()
+        }
+
         clientCtx.on(invokeReceiveEvent, (payload) => {
           if (!payload.body) {
             return
@@ -83,6 +100,7 @@ export function defineStreamInvoke<
           }
 
           controller.error(payload.body.content.error as ResErr)
+          cleanup()
         })
         clientCtx.on(invokeReceiveEventStreamEnd, (payload) => {
           if (!payload.body) {
@@ -93,41 +111,68 @@ export function defineStreamInvoke<
           }
 
           controller.close()
+          cleanup()
         })
+
+        if (signal && onAbort) {
+          if (signal.aborted) {
+            onAbort()
+            return
+          }
+          signal.addEventListener('abort', onAbort as EventListener, { once: true })
+        }
       },
-      cancel() {
+      cancel(reason) {
+        clientCtx.emit(event.sendEventAbort, { invokeId, content: reason }, emitOptions as any)
         clientCtx.off(invokeReceiveEvent)
         clientCtx.off(invokeReceiveEventError)
         clientCtx.off(invokeReceiveEventStreamEnd)
+        if (signal && onAbort) {
+          signal.removeEventListener('abort', onAbort as EventListener)
+        }
       },
     })
 
     if (isReadableStream<Req>(req) || isAsyncIterable<Req>(req)) {
       const sendChunk = (chunk: Req) => {
-        clientCtx.emit(event.sendEvent, { invokeId, content: chunk, isReqStream: true }) // emit: event_trigger
+        clientCtx.emit(event.sendEvent, { invokeId, content: chunk, isReqStream: true }, emitOptions as any) // emit: event_trigger
       }
 
       const sendEnd = () => {
-        clientCtx.emit(event.sendEventStreamEnd, { invokeId, content: undefined }) // emit: event_stream_end
+        clientCtx.emit(event.sendEventStreamEnd, { invokeId, content: undefined }, emitOptions as any) // emit: event_stream_end
       }
 
       const pump = async () => {
         try {
           for await (const chunk of req) {
+            // If aborted already, no further emits
+            if (signal?.aborted) {
+              return
+            }
+
             sendChunk(chunk)
           }
 
           sendEnd()
         }
         catch (error) {
-          clientCtx.emit(event.sendEventError, { invokeId, content: error as ReqErr }) // emit: event_error
+          // If aborted already, no further emits
+          if (signal?.aborted) {
+            return
+          }
+          if (isAbortError(error)) {
+            clientCtx.emit(event.sendEventAbort, { invokeId, content: error }, emitOptions as any)
+            return
+          }
+
+          clientCtx.emit(event.sendEventError, { invokeId, content: error as ReqErr }, emitOptions as any) // emit: event_error
         }
       }
 
       pump()
     }
     else {
-      clientCtx.emit(event.sendEvent, { invokeId, content: req }) // emit: event_trigger
+      clientCtx.emit(event.sendEvent, { invokeId, content: req }, emitOptions as any) // emit: event_trigger
     }
 
     return stream
@@ -137,9 +182,6 @@ export function defineStreamInvoke<
 type StreamHandler<Res, Req = any, RawEventOptions = unknown> = (
   payload: Req,
   options?: {
-    /**
-     * TODO: Support aborting invoke handlers
-     */
     abortController?: AbortController
   } & RawEventOptions,
 ) => AsyncGenerator<Res, void, unknown>
@@ -184,14 +226,33 @@ export function defineStreamInvokeHandler<
   const invokeReceiveEventError = (invokeId: string) => defineEventa(`${event.receiveEventError.id}-${invokeId}`) as ReceiveEventError<Res, Req, ResErr, ReqErr>
   const invokeReceiveEventStreamEnd = (invokeId: string) => defineEventa(`${event.receiveEventStreamEnd.id}-${invokeId}`) as ReceiveEventStreamEnd<Res>
   const streamStates = new Map<string, ReadableStreamDefaultController<Req>>()
+  const abortControllers = new Map<string, AbortController>()
+  const abortReasons = new Map<string, unknown>()
+  const scheduleAbort = (controller: AbortController, reason: unknown) => {
+    if (typeof queueMicrotask !== 'undefined') {
+      queueMicrotask(() => controller.abort(reason))
+      return
+    }
+    Promise.resolve().then(() => controller.abort(reason))
+  }
 
   const handleInvoke = async (invokeId: string, payload: Req, options?: EO) => {
     const receiveEvent = invokeReceiveEvent(invokeId)
     const receiveEventError = invokeReceiveEventError(invokeId)
     const receiveEventStreamEnd = invokeReceiveEventStreamEnd(invokeId)
+    const abortController = new AbortController()
+    abortControllers.set(invokeId, abortController)
+
+    if (abortReasons.has(invokeId)) {
+      scheduleAbort(abortController, abortReasons.get(invokeId))
+    }
+
+    const handlerOptions = options
+      ? { ...options, abortController }
+      : ({ abortController } as EO & { abortController: AbortController })
 
     try {
-      const generator = fn(payload, options) // Call the handler function with the request payload
+      const generator = fn(payload, handlerOptions) // Call the handler function with the request payload
       for await (const res of generator) {
         serverCtx.emit(receiveEvent, { invokeId, content: res }, options) // emit: event_response
       }
@@ -200,6 +261,10 @@ export function defineStreamInvokeHandler<
     }
     catch (error) {
       serverCtx.emit(receiveEventError, { invokeId, content: { error: error as ResErr } }, options) // emit: event_response with error
+    }
+    finally {
+      abortControllers.delete(invokeId)
+      abortReasons.delete(invokeId)
     }
   }
 
@@ -250,6 +315,48 @@ export function defineStreamInvokeHandler<
 
     controller.close()
     streamStates.delete(payload.body.invokeId)
+  })
+
+  serverCtx.on(event.sendEventAbort, (payload) => { // on: event_abort
+    if (!payload.body) {
+      return
+    }
+    if (!payload.body.invokeId) {
+      return
+    }
+
+    const invokeId = payload.body.invokeId
+    const reason = payload.body.content
+    const abortController = abortControllers.get(invokeId)
+    if (!abortController) {
+      abortReasons.set(invokeId, reason)
+
+      let controller = streamStates.get(invokeId)
+      if (!controller) {
+        let localController: ReadableStreamDefaultController<Req>
+        const reqStream = new ReadableStream<Req>({
+          start(c) {
+            localController = c
+          },
+        })
+
+        controller = localController!
+        streamStates.set(invokeId, controller)
+        handleInvoke(invokeId, reqStream as Req)
+      }
+
+      controller.error(createAbortError(reason))
+      streamStates.delete(invokeId)
+      return
+    }
+
+    scheduleAbort(abortController, reason)
+
+    const controller = streamStates.get(invokeId)
+    if (controller) {
+      controller.error(createAbortError(reason))
+      streamStates.delete(invokeId)
+    }
   })
 }
 

@@ -1,10 +1,10 @@
 import type { EventContext } from './context'
 import type { Eventa } from './eventa'
-import type { InvokeEventa, ReceiveEvent, ReceiveEventError, SendEvent, SendEventStreamEnd } from './invoke-shared'
+import type { InvokeEventa, ReceiveEvent, ReceiveEventError, SendEvent, SendEventAbort, SendEventStreamEnd } from './invoke-shared'
 
 import { defineEventa, nanoid } from './eventa'
 import { isReceiveEvent } from './invoke-shared'
-import { isAsyncIterable, isReadableStream } from './utils'
+import { createAbortError, isAbortError, isAsyncIterable, isReadableStream } from './utils'
 
 type IsInvokeRequestOptional<EC extends EventContext<any, any>>
   = EC extends EventContext<infer E, any>
@@ -40,14 +40,19 @@ type ExtractInvokeResponse<EC extends EventContext<any, any>>
 export type InvokeFunction<Res, Req, EC extends EventContext<any, any>>
   = [Req] extends [undefined]
     ? IsInvokeRequestOptional<EC> extends true
-      ? (req?: Req, invokeRequest?: ExtractInvokeRequest<EC>) => Promise<Res>
-      : (req: Req, invokeRequest: ExtractInvokeRequest<EC>) => Promise<Res>
+      ? (req?: Req, options?: InvokeOptions<EC>) => Promise<Res>
+      : (req: Req, options: InvokeOptions<EC>) => Promise<Res>
     : IsInvokeRequestOptional<EC> extends true
-      ? (req: Req, invokeRequest?: ExtractInvokeRequest<EC>) => Promise<Res>
-      : (req: Req, invokeRequest: ExtractInvokeRequest<EC>) => Promise<Res>
+      ? (req: Req, options?: InvokeOptions<EC>) => Promise<Res>
+      : (req: Req, options: InvokeOptions<EC>) => Promise<Res>
 
 export type InvokeFunctionMap<EventMap extends Record<string, InvokeEventa<any, any, any, any>>, EC extends EventContext<any, any>> = {
   [K in keyof EventMap]: EventMap[K] extends InvokeEventa<infer Res, infer Req, any, any> ? InvokeFunction<Res, Req, EC> : never
+}
+
+export interface InvokeOptions<EC extends EventContext<any, any>> {
+  invokeRequest?: ExtractInvokeRequest<EC>
+  signal?: AbortSignal
 }
 
 export type ExtendableInvokeResponse<Res, EC extends EventContext<any, any>>
@@ -79,9 +84,6 @@ export function isExtendableInvokeResponseLike<Res, EC extends EventContext<any,
 export type Handler<Res, Req = any, EC extends EventContext<any, any> = EventContext<any, any>, RawEventOptions = unknown> = (
   payload: Req,
   options?: {
-    /**
-     * TODO: Support aborting invoke handlers
-     */
     abortController?: AbortController
   } & RawEventOptions,
 ) => ExtendableInvokeResponse<Res, EC>
@@ -95,6 +97,7 @@ interface InternalInvokeHandler<
 > {
   onSend: (params: InvokeEventa<Res, Req, ResErr, ReqErr>['sendEvent'], eventOptions?: EO) => void
   onSendStreamEnd: (params: InvokeEventa<Res, Req, ResErr, ReqErr>['sendEventStreamEnd'], eventOptions?: EO) => void
+  onSendAbort: (params: InvokeEventa<Res, Req, ResErr, ReqErr>['sendEventAbort'], eventOptions?: EO) => void
 }
 
 export type HandlerMap<
@@ -170,17 +173,48 @@ export function defineInvoke<
   EOpts = any,
   ECtx extends EventContext<CtxExt, EOpts> = EventContext<CtxExt, EOpts>,
 >(ctx: ECtx, event: InvokeEventa<Res, Req, ResErr, ReqErr>): InvokeFunction<Res, Req, ECtx> {
-  const mInvokeIdPromiseResolvers = new Map<string, (value: Res | PromiseLike<Res>) => void>()
-  const mInvokeIdPromiseRejectors = new Map<string, (err?: any) => void>()
-
-  function _invoke(req?: Req, options?: { invokeRequest?: ExtractInvokeRequest<ECtx> }): Promise<Res> {
+  function _invoke(req?: Req, options?: InvokeOptions<ECtx>): Promise<Res> {
     return new Promise<Res>((resolve, reject) => {
       const invokeId = nanoid()
-      mInvokeIdPromiseResolvers.set(invokeId, resolve)
-      mInvokeIdPromiseRejectors.set(invokeId, reject)
 
       const invokeReceiveEvent = defineEventa(`${event.receiveEvent.id}-${invokeId}`) as ReceiveEvent<Res>
       const invokeReceiveEventError = defineEventa(`${event.receiveEventError.id}-${invokeId}`) as ReceiveEventError<Res, Req, ResErr, ReqErr>
+      const { signal, ...emitOptions } = (options ?? {}) as InvokeOptions<ECtx> & Record<string, any>
+      let finished = false
+
+      const onAbort = () => {
+        ctx.emit(event.sendEventAbort, { invokeId, content: signal?.reason }, emitOptions as any)
+        // eslint-disable-next-line ts/no-use-before-define
+        finishReject(createAbortError(signal?.reason))
+      }
+
+      const cleanup = () => {
+        ctx.off(invokeReceiveEvent)
+        ctx.off(invokeReceiveEventError)
+        if (signal) {
+          signal.removeEventListener('abort', onAbort)
+        }
+      }
+
+      const finishReject = (error?: any) => {
+        if (finished) {
+          return
+        }
+
+        finished = true
+        reject(error)
+        cleanup()
+      }
+
+      const finishResolve = (value: Res) => {
+        if (finished) {
+          return
+        }
+        finished = true
+        resolve(value)
+
+        cleanup()
+      }
 
       ctx.on(invokeReceiveEvent, (payload) => {
         if (!payload.body) {
@@ -191,11 +225,7 @@ export function defineInvoke<
         }
 
         const { content } = payload.body
-        mInvokeIdPromiseResolvers.get(invokeId)?.(content as Res)
-        mInvokeIdPromiseResolvers.delete(invokeId)
-        mInvokeIdPromiseRejectors.delete(invokeId)
-        ctx.off(invokeReceiveEvent)
-        ctx.off(invokeReceiveEventError)
+        finishResolve(content as Res)
       })
 
       ctx.on(invokeReceiveEventError, (payload) => {
@@ -207,35 +237,54 @@ export function defineInvoke<
         }
 
         const { error } = payload.body.content
-        mInvokeIdPromiseRejectors.get(invokeId)?.(error)
-        mInvokeIdPromiseRejectors.delete(invokeId)
-        mInvokeIdPromiseResolvers.delete(invokeId)
-        ctx.off(invokeReceiveEvent)
-        ctx.off(invokeReceiveEventError)
+        finishReject(error)
       })
 
+      if (signal) {
+        if (signal.aborted) {
+          onAbort()
+          return
+        }
+
+        signal.addEventListener('abort', onAbort, { once: true })
+      }
+
       if (!isReadableStream<Req>(req) && !isAsyncIterable<Req>(req)) {
-        ctx.emit(event.sendEvent, { invokeId, content: req as Req }, options as any) // emit: event_trigger
+        ctx.emit(event.sendEvent, { invokeId, content: req as Req }, emitOptions as any) // emit: event_trigger
       }
       else {
         const sendChunk = (chunk: Req) => {
-          ctx.emit(event.sendEvent, { invokeId, content: chunk, isReqStream: true }, options as any) // emit: event_trigger
+          ctx.emit(event.sendEvent, { invokeId, content: chunk, isReqStream: true }, emitOptions as any) // emit: event_trigger
         }
 
         const sendEnd = () => {
-          ctx.emit(event.sendEventStreamEnd, { invokeId, content: undefined }, options as any) // emit: event_stream_end
+          ctx.emit(event.sendEventStreamEnd, { invokeId, content: undefined }, emitOptions as any) // emit: event_stream_end
         }
 
         const pump = async () => {
           try {
             for await (const chunk of req) {
+              // If aborted already, no further emits
+              if (signal?.aborted) {
+                return
+              }
+
               sendChunk(chunk)
             }
 
             sendEnd()
           }
           catch (error) {
-            ctx.emit(event.sendEventError, { invokeId, content: error as ReqErr }, options as any) // emit: event_error
+            // Make sure no further emits after abort
+            if (signal?.aborted) {
+              return
+            }
+            if (isAbortError(error)) {
+              ctx.emit(event.sendEventAbort, { invokeId, content: error }, emitOptions as any)
+              return
+            }
+
+            ctx.emit(event.sendEventError, { invokeId, content: error as ReqErr }, emitOptions as any) // emit: event_error
           }
         }
 
@@ -323,10 +372,33 @@ export function defineInvokeHandler<
   let internalHandler = handlers.get(handler) as InternalInvokeHandler<Res, Req, ResErr, ReqErr, EOpts> | undefined
   if (!internalHandler) {
     const streamStates = new Map<string, ReadableStreamDefaultController<Req>>()
+    const abortControllers = new Map<string, AbortController>()
+    const abortReasons = new Map<string, unknown>()
+    const scheduleAbort = (controller: AbortController, reason: unknown) => {
+      // NOTICE: use microtask to avoid aborting before the handler starts.
+      // This is important when the handler creates streams or async iterables
+      if (typeof queueMicrotask !== 'undefined') {
+        queueMicrotask(() => controller.abort(reason))
+        return
+      }
+
+      Promise.resolve().then(() => controller.abort(reason))
+    }
 
     const handleInvoke = async (invokeId: string, payload: Req, options?: EOpts) => {
+      const abortController = new AbortController()
+      abortControllers.set(invokeId, abortController)
+
+      if (abortReasons.has(invokeId)) {
+        scheduleAbort(abortController, abortReasons.get(invokeId))
+      }
+
+      const handlerOptions = options
+        ? { ...options, abortController }
+        : ({ abortController } as EOpts & { abortController: AbortController })
+
       try {
-        const response = await handler(payload as Req, options) // Call the handler function with the request payload
+        const response = await handler(payload as Req, handlerOptions) // Call the handler function with the request payload
         ctx.emit(
           { ...defineEventa(`${event.receiveEvent.id}-${invokeId}`), invokeType: event.receiveEvent.invokeType } as ReceiveEvent<ExtendableInvokeResponse<Res, InvocableEventContext<CtxExt, EOpts>>>,
           { invokeId, content: response },
@@ -340,6 +412,10 @@ export function defineInvokeHandler<
           { invokeId, content: { error: error as ResErr } },
           options,
         )
+      }
+      finally {
+        abortControllers.delete(invokeId)
+        abortReasons.delete(invokeId)
       }
     }
 
@@ -403,16 +479,60 @@ export function defineInvokeHandler<
       streamStates.delete(invokeId)
     }
 
-    internalHandler = { onSend, onSendStreamEnd }
+    const onSendAbort = (payload: SendEventAbort<Res, Req, ResErr, ReqErr>, options: EOpts) => { // on: event_abort
+      if (!payload.body) {
+        return
+      }
+      if (!payload.body.invokeId) {
+        return
+      }
+
+      const invokeId = payload.body.invokeId
+      const reason = payload.body.content
+      const abortController = abortControllers.get(invokeId)
+      if (!abortController) {
+        abortReasons.set(invokeId, reason)
+
+        let streamController = streamStates.get(invokeId)
+        if (!streamController) {
+          let localController: ReadableStreamDefaultController<Req>
+          const reqStream = new ReadableStream<Req>({
+            start(c) {
+              localController = c
+            },
+          })
+
+          streamController = localController!
+          streamStates.set(invokeId, streamController)
+          handleInvoke(invokeId, reqStream as Req, options)
+        }
+
+        streamController.error(createAbortError(reason))
+        streamStates.delete(invokeId)
+        return
+      }
+
+      scheduleAbort(abortController, reason)
+
+      const streamController = streamStates.get(invokeId)
+      if (streamController) {
+        streamController.error(createAbortError(reason))
+        streamStates.delete(invokeId)
+      }
+    }
+
+    internalHandler = { onSend, onSendStreamEnd, onSendAbort }
     handlers.set(handler, internalHandler)
 
     ctx.on(event.sendEvent, internalHandler.onSend)
     ctx.on(event.sendEventStreamEnd, internalHandler.onSendStreamEnd)
+    ctx.on(event.sendEventAbort, internalHandler.onSendAbort)
   }
 
   return () => {
     ctx.off(event.sendEvent, internalHandler.onSend)
     ctx.off(event.sendEventStreamEnd, internalHandler.onSendStreamEnd)
+    ctx.off(event.sendEventAbort, internalHandler.onSendAbort)
   }
 }
 
@@ -502,6 +622,7 @@ export function undefineInvokeHandler<
 
     ctx.off(event.sendEvent, internalHandler.onSend)
     ctx.off(event.sendEventStreamEnd, internalHandler.onSendStreamEnd)
+    ctx.off(event.sendEventAbort, internalHandler.onSendAbort)
     ctx.invokeHandlers.delete(event.sendEvent.id)
 
     return true
@@ -511,6 +632,7 @@ export function undefineInvokeHandler<
   for (const internalHandlers of handlers.values()) {
     ctx.off(event.sendEvent, internalHandlers.onSend)
     ctx.off(event.sendEventStreamEnd, internalHandlers.onSendStreamEnd)
+    ctx.off(event.sendEventAbort, internalHandlers.onSendAbort)
     returnValue = true
   }
 

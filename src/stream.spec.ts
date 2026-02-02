@@ -1,3 +1,4 @@
+import { sleep } from '@moeru/std/sleep'
 import { describe, expect, it } from 'vitest'
 
 import { createContext } from './context'
@@ -109,12 +110,11 @@ describe('stream', () => {
     interface Result { type: 'result', name: string }
 
     const events = defineInvokeEventa<Progress | Result, Parameter>()
-    const sleep = () => new Promise<void>(resolve => setTimeout(resolve, 0))
 
     defineStreamInvokeHandler(ctx, events, ({ name, steps }) => {
       return (async function* () {
         for (let i = 1; i <= steps; i++) {
-          await sleep()
+          await sleep(0)
           const progress: Progress = { type: 'progress', name, step: i }
           yield progress
         }
@@ -181,6 +181,142 @@ describe('stream', () => {
         // consume to trigger error
       }
     }).rejects.toBe(emittedError)
+  })
+
+  it('should abort stream invoke and notify handler', async () => {
+    const ctx = createContext()
+    const events = defineInvokeEventa<string, string>()
+    let handlerNotified = false
+
+    defineStreamInvokeHandler(ctx, events, async function* (_payload, options) {
+      await new Promise<void>((resolve) => {
+        options?.abortController?.signal.addEventListener('abort', () => {
+          handlerNotified = true
+          resolve()
+        }, { once: true })
+      })
+    })
+
+    const invoke = defineStreamInvoke(ctx, events)
+    const controller = new AbortController()
+    const stream = invoke('hello', { signal: controller.signal })
+    const readPromise = (async () => {
+      for await (const _ of stream) {
+        // consume to trigger error
+      }
+    })()
+
+    controller.abort('stop')
+
+    await expect(readPromise).rejects.toMatchObject({ name: 'AbortError' })
+    await sleep(0)
+    expect(handlerNotified).toBe(true)
+  })
+
+  it('should notify handler when stream is canceled', async () => {
+    const ctx = createContext()
+    const events = defineInvokeEventa<string, string>()
+    let handlerNotified = false
+
+    defineStreamInvokeHandler(ctx, events, async function* (_payload, options) {
+      await new Promise<void>((resolve) => {
+        options?.abortController?.signal.addEventListener('abort', () => {
+          handlerNotified = true
+          resolve()
+        }, { once: true })
+      })
+    })
+
+    const invoke = defineStreamInvoke(ctx, events)
+    const stream = invoke('hello')
+    await stream.cancel('stop')
+
+    await sleep(0)
+    expect(handlerNotified).toBe(true)
+  })
+
+  // Design: emit a paced request stream (250ms interval, 10 items),
+  // abort between item 4 and 5, then assert:
+  // - client stream throws AbortError
+  // - handler sees AbortError from request stream
+  // - only 4 items observed
+  // - elapsed time falls between 4x and 5x the interval (abort timing)
+  it('should abort handler when request stream is aborted', async () => {
+    const ctx = createContext()
+    const events = defineInvokeEventa<number, ReadableStream<number>>()
+
+    const received: number[] = []
+    let handlerNotified = false
+    let handlerError: unknown
+
+    defineStreamInvokeHandler(ctx, events, async function* (payload, options) {
+      options?.abortController?.signal.addEventListener('abort', () => {
+        handlerNotified = true
+      }, { once: true })
+
+      try {
+        for await (const value of payload) {
+          received.push(value)
+          yield value
+        }
+      }
+      catch (error) {
+        handlerError = error
+      }
+    })
+
+    const invoke = defineStreamInvoke(ctx, events)
+
+    const controller = new AbortController()
+    const writeIntervalMs = 250
+    const totalWrites = 10
+
+    // Simulate paced input stream
+    const input = new ReadableStream<number>({
+      start(streamController) {
+        let count = 0
+        const interval = setInterval(() => {
+          count += 1
+          streamController.enqueue(count)
+          if (count >= totalWrites) {
+            clearInterval(interval)
+            streamController.close()
+          }
+        }, writeIntervalMs)
+      },
+      cancel() {
+        // no-op: interval will be GC'd once stream is dropped
+      },
+    })
+
+    const stream = invoke(input, { signal: controller.signal })
+    const responses: number[] = []
+    const readPromise = (async () => {
+      try {
+        for await (const value of stream) {
+          responses.push(value)
+        }
+      }
+      catch (error) {
+        return error
+      }
+      return undefined
+    })()
+
+    const start = Date.now()
+    setTimeout(() => controller.abort('stop'), writeIntervalMs * 4 + 50)
+
+    const readError = await readPromise
+    const elapsed = Date.now() - start
+
+    expect(readError).toMatchObject({ name: 'AbortError' })
+    await sleep(0)
+    expect(handlerNotified).toBe(true)
+    expect(handlerError).toMatchObject({ name: 'AbortError' })
+    expect(received.length).toBe(4)
+    expect(responses).toEqual([1, 2, 3, 4])
+    expect(elapsed).toBeGreaterThanOrEqual(writeIntervalMs * 4)
+    expect(elapsed).toBeLessThan(writeIntervalMs * 5)
   })
 
   it('should support request stream input', async () => {

@@ -112,6 +112,7 @@
   "devDependencies": {
     "@antfu/eslint-config": "catalog:",
     "@electron-toolkit/preload": "catalog:",
+    "@moeru/std": "catalog:",
     "@types/node": "catalog:",
     "@vitest/coverage-v8": "catalog:",
     "@vitest/web-worker": "catalog:",

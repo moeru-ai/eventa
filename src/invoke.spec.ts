@@ -1,5 +1,6 @@
 import type { InvokeFunction } from './invoke'
 
+import { sleep } from '@moeru/std/sleep'
 import { describe, expect, expectTypeOf, it, vi } from 'vitest'
 
 import { createContext } from './context'
@@ -46,6 +47,33 @@ describe('invoke', () => {
     const invoke = defineInvoke(ctx, events)
 
     await expect(invoke()).rejects.toBe(emittedError)
+  })
+
+  it('should abort invoke and notify handler', async () => {
+    const ctx = createContext()
+    const events = defineInvokeEventa<string, { value: number }>()
+    let handlerNotified = false
+
+    defineInvokeHandler(ctx, events, async (_payload, options) => {
+      await new Promise<void>((resolve) => {
+        options?.abortController?.signal.addEventListener('abort', () => {
+          handlerNotified = true
+          resolve()
+        }, { once: true })
+      })
+
+      return 'ok'
+    })
+
+    const invoke = defineInvoke(ctx, events)
+    const controller = new AbortController()
+    const promise = invoke({ value: 1 }, { signal: controller.signal })
+
+    controller.abort('stop')
+
+    await expect(promise).rejects.toMatchObject({ name: 'AbortError' })
+    await sleep(0)
+    expect(handlerNotified).toBe(true)
   })
 
   it('should handle multiple concurrent invokes', async () => {
@@ -195,6 +223,76 @@ describe('invoke', () => {
 
     const result = await invoke(input)
     expect(result).toBe(6)
+  })
+
+  // Design: emit a paced request stream (250ms interval, 10 items),
+  // abort between item 4 and 5, then assert:
+  // - invoke rejects with AbortError
+  // - handler sees AbortError from request stream
+  // - only 4 items observed
+  // - elapsed time falls between 4x and 5x the interval (abort timing)
+  it('should abort handler when request stream is aborted', async () => {
+    const ctx = createContext()
+    const events = defineInvokeEventa<number, ReadableStream<number>>()
+
+    const received: number[] = []
+    let handlerNotified = false
+    let handlerError: unknown
+
+    defineInvokeHandler(ctx, events, async (payload, options) => {
+      options?.abortController?.signal.addEventListener('abort', () => {
+        handlerNotified = true
+      }, { once: true })
+
+      let sum = 0
+      try {
+        for await (const value of payload) {
+          received.push(value)
+          sum += value
+        }
+      }
+      catch (error) {
+        handlerError = error
+      }
+
+      return sum
+    })
+
+    const invoke = defineInvoke(ctx, events)
+
+    const controller = new AbortController()
+    const writeIntervalMs = 250
+    const totalWrites = 10
+
+    const input = new ReadableStream<number>({
+      start(streamController) {
+        let count = 0
+        const interval = setInterval(() => {
+          count += 1
+          streamController.enqueue(count)
+          if (count >= totalWrites) {
+            clearInterval(interval)
+            streamController.close()
+          }
+        }, writeIntervalMs)
+      },
+      cancel() {
+        // no-op: interval will be GC'd once stream is dropped
+      },
+    })
+
+    const promise = invoke(input, { signal: controller.signal })
+    const start = Date.now()
+    setTimeout(() => controller.abort('stop'), writeIntervalMs * 4 + 50)
+
+    await expect(promise).rejects.toMatchObject({ name: 'AbortError' })
+    const elapsed = Date.now() - start
+    await sleep(0)
+    expect(handlerNotified).toBe(true)
+    expect(handlerError).toMatchObject({ name: 'AbortError' })
+    expect(received.length).toBe(4)
+    expect(elapsed).toBeGreaterThanOrEqual(writeIntervalMs * 4)
+    expect(elapsed).toBeLessThan(writeIntervalMs * 5)
   })
 })
 

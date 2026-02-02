@@ -7,7 +7,7 @@ interface CreateContextProps<EmitOptions = any> {
   adapter?: EventaAdapter<EmitOptions>
 }
 
-export function createContext<Extensions = any, Options = { raw: any }>(props: CreateContextProps<Options> = {}): EventContext<Extensions, Options> {
+export function createContext<Extensions = any, Options = { raw?: any }>(props: CreateContextProps<Options> = {}): EventContext<Extensions, Options> {
   const listeners = new Map<EventTag<any, any>, Set<(params: any, options?: Options) => any>>()
   const onceListeners = new Map<EventTag<any, any>, Set<(params: any, options?: Options) => any>>()
 

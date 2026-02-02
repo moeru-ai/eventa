@@ -30,6 +30,29 @@ export function isReadableStream<T>(obj?: unknown | null): obj is ReadableStream
   )
 }
 
+export function createAbortError(reason?: unknown): Error {
+  if (reason instanceof Error && reason.name === 'AbortError') {
+    return reason
+  }
+
+  if (typeof DOMException !== 'undefined') {
+    try {
+      return new DOMException(reason ? String(reason) : 'Aborted', 'AbortError')
+    }
+    catch {
+      // fall through
+    }
+  }
+
+  const error = reason instanceof Error ? reason : new Error(reason ? String(reason) : 'Aborted')
+  error.name = 'AbortError'
+  return error
+}
+
+export function isAbortError(error: unknown): error is Error {
+  return error instanceof Error && error.name === 'AbortError'
+}
+
 export function createUntilTriggeredOnce<F extends (...args: any[]) => any, P extends any[] = Parameters<F>, R = ReturnType<F>>(fn: F): {
   onceTriggered: Promise<Awaited<R>>
   wrapper: (...args: P) => Promise<Awaited<R>>

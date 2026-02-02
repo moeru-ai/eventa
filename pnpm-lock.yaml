@@ -12,6 +12,9 @@ catalogs:
     '@electron-toolkit/preload':
       specifier: ^3.0.2
       version: 3.0.2
+    '@moeru/std':
+      specifier: 0.1.0-beta.15
+      version: 0.1.0-beta.15
     '@types/node':
       specifier: ^25.0.2
       version: 25.0.2
@@ -81,6 +84,9 @@ importers:
       '@electron-toolkit/preload':
         specifier: 'catalog:'
         version: 3.0.2(electron@37.2.4)
+      '@moeru/std':
+        specifier: 'catalog:'
+        version: 0.1.0-beta.15
       '@types/node':
         specifier: 'catalog:'
         version: 25.0.2
@@ -505,6 +511,9 @@ packages:
 
   '@loaderkit/resolve@1.0.4':
     resolution: {integrity: sha512-rJzYKVcV4dxJv+vW6jlvagF8zvGxHJ2+HTr1e2qOejfmGhAApgJHl8Aog4mMszxceTRiKTTbnpgmTO1bEZHV/A==}
+
+  '@moeru/std@0.1.0-beta.15':
+    resolution: {integrity: sha512-lTi/b2ysilOSE/yo9uY9JIaNOE32kHpemWMxA4ZDIMxWeHZAEXK+jLi8EiXHtdBltjDlBYfNWeWcfH0KKiEJQA==}
 
   '@napi-rs/wasm-runtime@1.1.0':
     resolution: {integrity: sha512-Fq6DJW+Bb5jaWE69/qOE0D1TUN9+6uWhCeZpdnSBk14pjLcCWR7Q8n49PTSPHazM37JqrsdpEthXy2xn6jWWiA==}
@@ -2861,6 +2870,8 @@ snapshots:
     dependencies:
       '@braidai/lang': 1.1.1
     optional: true
+
+  '@moeru/std@0.1.0-beta.15': {}
 
   '@napi-rs/wasm-runtime@1.1.0':
     dependencies:
