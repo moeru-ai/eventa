@@ -194,6 +194,7 @@ export function defineInvoke<
         if (signal) {
           signal.removeEventListener('abort', onAbort)
         }
+
       }
 
       const finishReject = (error?: any) => {
