@@ -1,5 +1,5 @@
 import type { EventContext } from './context'
-import type { Handler, InvocableEventContext, InvokeOptions } from './invoke'
+import type { ExtractInvokeRequestOptions, Handler, InvocableEventContext } from './invoke'
 import type { InvokeEventa } from './invoke-shared'
 
 import { nanoid } from './eventa'
@@ -16,7 +16,7 @@ export interface InvokeFunctionStubOptions {
   strict?: boolean
 }
 
-export interface RemoteInvokeOptions<EC extends EventContext<any, any>> extends InvokeOptions<EC> {
+export type RemoteInvokeOptions<EC extends EventContext<any, any>> = ExtractInvokeRequestOptions<EC> & {
   functionStubs?: boolean | InvokeFunctionStubOptions
 }
 
@@ -342,7 +342,7 @@ export function withRemoteMethods(defaultOptions?: boolean | InvokeFunctionStubO
         const normalizedOptions = resolveFunctionStubOptions(defaultOptions, functionStubs)
 
         if (!normalizedOptions.allow) {
-          const promise = baseInvoke(req as Req, invokeOptions as InvokeOptions<ECtx>)
+          const promise = baseInvoke(req as Req, invokeOptions as ExtractInvokeRequestOptions<ECtx>)
           const wrapped = promise as RemoteInvokeResult<Res>
           wrapped.dispose = () => void 0
 
@@ -384,7 +384,7 @@ export function withRemoteMethods(defaultOptions?: boolean | InvokeFunctionStubO
           dispose()
         }
 
-        const promise = baseInvoke(serialized.value as Req, invokeOptions as InvokeOptions<ECtx>)
+        const promise = baseInvoke(serialized.value as Req, invokeOptions as ExtractInvokeRequestOptions<ECtx>)
           .finally(finalize)
 
         const wrapped = promise as RemoteInvokeResult<Res>

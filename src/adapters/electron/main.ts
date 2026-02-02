@@ -25,7 +25,10 @@ export function createContext(ipcMain: IpcMain, window?: BrowserWindow, options?
   extraListeners?: Record<string, (_, event: Event) => void | Promise<void>>
   throwIfFailedToSend?: boolean
 }) {
-  const ctx = createBaseContext() as EventContext<any, { raw: { ipcMainEvent: IpcMainEvent, event: Event | unknown } }>
+  const ctx = createBaseContext() as EventContext<
+    { invokeRequest?: { raw?: { ipcMainEvent: IpcMainEvent, event: Event | unknown } } },
+    { raw: { ipcMainEvent: IpcMainEvent, event: Event | unknown } }
+  >
 
   const {
     messageEventName = 'eventa-message',

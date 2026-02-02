@@ -15,7 +15,7 @@ export function createGlobalContext(): {
   websocketHandlers: Omit<Hooks, 'upgrade'>
   context: EventContext<any, { raw: { error?: WSError, message?: Message } }>
 } {
-  const ctx = createBaseContext()
+  const ctx = createBaseContext<any, { raw: { error?: WSError, message?: Message } }>()
   const peers = new Set<Peer>()
 
   ctx.on(and(

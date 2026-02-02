@@ -16,7 +16,7 @@ export function createPeerContext(peer: Peer): {
   context: EventContext<any, { raw: { message: Message } }>
 } {
   const peerId = peer.id
-  const ctx = createBaseContext()
+  const ctx = createBaseContext<any, { raw: { message: Message } }>()
 
   ctx.on(and(
     matchBy((e: DirectionalEventa<any>) => e._flowDirection === EventaFlowDirection.Outbound || !e._flowDirection),

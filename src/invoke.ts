@@ -19,16 +19,16 @@ type IsInvokeRequestOptional<EC extends EventContext<any, any>>
         : true
     : true
 
-type ExtractInvokeRequest<EC extends EventContext<any, any>>
+export type ExtractInvokeRequestOptions<EC extends EventContext<any, any>>
   = EC extends EventContext<infer E, any>
     ? E extends { invokeRequest: infer IR }
-      ? IR
+      ? IR & { signal?: AbortSignal }
       : E extends { invokeRequest?: infer IR }
-        ? IR
-        : undefined
-    : undefined
+        ? IR & { signal?: AbortSignal }
+        : { signal?: AbortSignal }
+    : { signal?: AbortSignal }
 
-type ExtractInvokeResponse<EC extends EventContext<any, any>>
+export type ExtractInvokeResponseOptions<EC extends EventContext<any, any>>
   = EC extends EventContext<infer E, any>
     ? E extends { invokeResponse: infer IR }
       ? IR
@@ -40,28 +40,23 @@ type ExtractInvokeResponse<EC extends EventContext<any, any>>
 export type InvokeFunction<Res, Req, EC extends EventContext<any, any>>
   = [Req] extends [undefined]
     ? IsInvokeRequestOptional<EC> extends true
-      ? (req?: Req, options?: InvokeOptions<EC>) => Promise<Res>
-      : (req: Req, options: InvokeOptions<EC>) => Promise<Res>
+      ? (req?: Req, options?: ExtractInvokeRequestOptions<EC>) => Promise<Res>
+      : (req: Req, options: ExtractInvokeRequestOptions<EC>) => Promise<Res>
     : IsInvokeRequestOptional<EC> extends true
-      ? (req: Req, options?: InvokeOptions<EC>) => Promise<Res>
-      : (req: Req, options: InvokeOptions<EC>) => Promise<Res>
+      ? (req: Req, options?: ExtractInvokeRequestOptions<EC>) => Promise<Res>
+      : (req: Req, options: ExtractInvokeRequestOptions<EC>) => Promise<Res>
 
 export type InvokeFunctionMap<EventMap extends Record<string, InvokeEventa<any, any, any, any>>, EC extends EventContext<any, any>> = {
   [K in keyof EventMap]: EventMap[K] extends InvokeEventa<infer Res, infer Req, any, any> ? InvokeFunction<Res, Req, EC> : never
 }
 
-export interface InvokeOptions<EC extends EventContext<any, any>> {
-  invokeRequest?: ExtractInvokeRequest<EC>
-  signal?: AbortSignal
-}
-
 export type ExtendableInvokeResponse<Res, EC extends EventContext<any, any>>
   = | Promise<Res>
     | Res
-    | Promise<{ response: Res, invokeResponse?: ExtractInvokeResponse<EC> }>
-    | { response: Res, invokeResponse?: ExtractInvokeResponse<EC> }
+    | Promise<{ response: Res, invokeResponse?: ExtractInvokeResponseOptions<EC> }>
+    | { response: Res, invokeResponse?: ExtractInvokeResponseOptions<EC> }
 
-export function isExtendableInvokeResponseLike<Res, EC extends EventContext<any, any>>(value: Eventa<unknown> | ReceiveEvent<{ response: Res, invokeResponse?: unknown }>): value is ReceiveEvent<{ response: Res, invokeResponse?: ExtractInvokeResponse<EC> }> {
+export function isExtendableInvokeResponseLike<Res, EC extends EventContext<any, any>>(value: Eventa<unknown> | ReceiveEvent<{ response: Res, invokeResponse?: unknown }>): value is ReceiveEvent<{ response: Res, invokeResponse?: ExtractInvokeResponseOptions<EC> }> {
   if (!isReceiveEvent(value)) {
     return false
   }
@@ -173,13 +168,13 @@ export function defineInvoke<
   EOpts = any,
   ECtx extends EventContext<CtxExt, EOpts> = EventContext<CtxExt, EOpts>,
 >(ctx: ECtx, event: InvokeEventa<Res, Req, ResErr, ReqErr>): InvokeFunction<Res, Req, ECtx> {
-  function _invoke(req?: Req, options?: InvokeOptions<ECtx>): Promise<Res> {
+  function _invoke(req?: Req, options?: ExtractInvokeRequestOptions<ECtx>): Promise<Res> {
     return new Promise<Res>((resolve, reject) => {
       const invokeId = nanoid()
 
       const invokeReceiveEvent = defineEventa(`${event.receiveEvent.id}-${invokeId}`) as ReceiveEvent<Res>
       const invokeReceiveEventError = defineEventa(`${event.receiveEventError.id}-${invokeId}`) as ReceiveEventError<Res, Req, ResErr, ReqErr>
-      const { signal, ...emitOptions } = (options ?? {}) as InvokeOptions<ECtx> & Record<string, any>
+      const { signal, ...emitOptions } = (options ?? {}) as ExtractInvokeRequestOptions<ECtx> & Record<string, any>
       let finished = false
 
       const onAbort = () => {
@@ -194,7 +189,6 @@ export function defineInvoke<
         if (signal) {
           signal.removeEventListener('abort', onAbort)
         }
-
       }
 
       const finishReject = (error?: any) => {

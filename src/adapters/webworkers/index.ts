@@ -12,7 +12,7 @@ export function createContext(worker: Worker) {
       invokeRequest?: { transfer?: Transferable[] }
       invokeResponse?: { transfer?: Transferable[] }
     },
-    { raw: { message?: MessageEvent, error?: ErrorEvent, messageError?: MessageEvent } }
+    { raw: { message?: MessageEvent, error?: ErrorEvent, messageError?: MessageEvent }, transfer?: Transferable[] }
   >
 
   ctx.on(and(

@@ -6,7 +6,7 @@ export function randomBetween(min: number, max: number): number {
  * Checks if a value is an AsyncIterable.
  *
  * @param value
- * @returns
+ * @returns True if the value is an AsyncIterable.
  */
 export function isAsyncIterable<T>(value: unknown): value is AsyncIterable<T> {
   return typeof value === 'object'
@@ -19,7 +19,7 @@ export function isAsyncIterable<T>(value: unknown): value is AsyncIterable<T> {
  *
  * @link https://github.com/cloudflare/workerd/blob/88e8696ce7a5f8969a7e02a2dcfb6504c17c9e8d/src/cloudflare/internal/streaming-forms.ts#L3
  * @param obj
- * @returns
+ * @returns True if the object looks like a ReadableStream.
  */
 export function isReadableStream<T>(obj?: unknown | null): obj is ReadableStream<T> {
   return !!(

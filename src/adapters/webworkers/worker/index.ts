@@ -19,7 +19,10 @@ export function createContext(options?: {
       invokeRequest?: { transfer?: Transferable[] }
       invokeResponse?: { transfer?: Transferable[] }
     },
-    { raw: { event?: any, error?: string | Event } }
+    {
+      raw: { event?: any, error?: string | Event }
+      transfer?: Transferable[]
+    }
   >
 
   ctx.on(and(
