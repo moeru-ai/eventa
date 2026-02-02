@@ -1,3 +1,5 @@
+import type { InvokeFunction } from './invoke'
+
 import { describe, expect, expectTypeOf, it, vi } from 'vitest'
 
 import { createContext } from './context'
@@ -165,6 +167,35 @@ describe('invoke', () => {
     expect(await invokeDouble(5)).toEqual(10)
     expect(await invokeAppend('test')).toEqual('test!')
   })
+
+  it('should support stream input', async () => {
+    const ctx = createContext()
+    const events = defineInvokeEventa<number, ReadableStream<number>>()
+
+    defineInvokeHandler(ctx, events, async (payload) => {
+      const values: number[] = []
+
+      for await (const value of payload) {
+        values.push(value)
+      }
+
+      return values.reduce((sum, value) => sum + value, 0)
+    })
+
+    const invoke = defineInvoke(ctx, events)
+    const input = new ReadableStream<number>({
+      start(controller) {
+        controller.enqueue(1)
+        controller.enqueue(2)
+        controller.enqueue(3)
+
+        controller.close()
+      },
+    })
+
+    const result = await invoke(input)
+    expect(result).toBe(6)
+  })
 })
 
 describe('invoke-type-safety', () => {
@@ -200,9 +231,10 @@ describe('invoke-type-safety', () => {
 
     const context = createContext()
     const invokeEventa = defineInvokeEventa<C, A | B>()
-    const invoke = defineInvoke(context, invokeEventa)
+    const _invoke = defineInvoke(context, invokeEventa)
 
-    expectTypeOf(invoke).toEqualTypeOf<(req: A | B, invokeRequest?: unknown) => Promise<C>>()
+    type Expected = InvokeFunction<C, A | B, typeof context>
+    expectTypeOf<typeof _invoke>().toEqualTypeOf<Expected>()
   })
 
   it('should return functions with correct types from defineInvoke when Res is a union type', () => {
@@ -212,8 +244,18 @@ describe('invoke-type-safety', () => {
 
     const context = createContext()
     const invokeEventa = defineInvokeEventa<A | B, C>()
-    const invoke = defineInvoke(context, invokeEventa)
+    const _invoke = defineInvoke(context, invokeEventa)
 
-    expectTypeOf(invoke).toEqualTypeOf<(req: C, invokeRequest?: unknown) => Promise<A | B>>()
+    type Expected = InvokeFunction<A | B, C, typeof context>
+    expectTypeOf<typeof _invoke>().toEqualTypeOf<Expected>()
+  })
+
+  it('should keep stream input when Req is a ReadableStream', () => {
+    const context = createContext()
+    const invokeEventa = defineInvokeEventa<number, ReadableStream<number>>()
+    const _invoke = defineInvoke(context, invokeEventa)
+
+    type Expected = InvokeFunction<number, ReadableStream<number>, typeof context>
+    expectTypeOf<typeof _invoke>().toEqualTypeOf<Expected>()
   })
 })

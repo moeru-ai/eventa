@@ -2,6 +2,34 @@ export function randomBetween(min: number, max: number): number {
   return Math.floor(Math.random() * (max - min + 1)) + min
 }
 
+/**
+ * Checks if a value is an AsyncIterable.
+ *
+ * @param value
+ * @returns
+ */
+export function isAsyncIterable<T>(value: unknown): value is AsyncIterable<T> {
+  return typeof value === 'object'
+    && value !== null
+    && Symbol.asyncIterator in value
+}
+
+/**
+ * Checks if an object is a ReadableStream.
+ *
+ * @link https://github.com/cloudflare/workerd/blob/88e8696ce7a5f8969a7e02a2dcfb6504c17c9e8d/src/cloudflare/internal/streaming-forms.ts#L3
+ * @param obj
+ * @returns
+ */
+export function isReadableStream<T>(obj?: unknown | null): obj is ReadableStream<T> {
+  return !!(
+    obj
+    && typeof obj === 'object'
+    && 'getReader' in obj
+    && typeof obj.getReader === 'function'
+  )
+}
+
 export function createUntilTriggeredOnce<F extends (...args: any[]) => any, P extends any[] = Parameters<F>, R = ReturnType<F>>(fn: F): {
   onceTriggered: Promise<Awaited<R>>
   wrapper: (...args: P) => Promise<Awaited<R>>

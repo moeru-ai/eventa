@@ -182,4 +182,71 @@ describe('stream', () => {
       }
     }).rejects.toBe(emittedError)
   })
+
+  it('should support request stream input', async () => {
+    const ctx = createContext()
+    const invokeDef = defineInvokeEventa<number, ReadableStream<number>>()
+
+    const received: number[] = []
+
+    defineStreamInvokeHandler(ctx, invokeDef, (payload) => {
+      return (async function* () {
+        for await (const chunk of payload) {
+          received.push(chunk)
+        }
+
+        const total = received.reduce((sum, value) => sum + value, 0)
+        yield total
+      }())
+    })
+
+    const invoke = defineStreamInvoke(ctx, invokeDef)
+    const input = new ReadableStream<number>({
+      start(controller) {
+        controller.enqueue(1)
+        controller.enqueue(2)
+        controller.enqueue(3)
+        controller.close()
+      },
+    })
+
+    const outputs: number[] = []
+    for await (const value of invoke(input)) {
+      outputs.push(value)
+    }
+
+    expect(received).toEqual([1, 2, 3])
+    expect(outputs).toEqual([6])
+  })
+
+  it('should support request stream input with to stream handler', async () => {
+    const ctx = createContext()
+    const invokeDef = defineInvokeEventa<number, ReadableStream<number>>()
+
+    defineStreamInvokeHandler(ctx, invokeDef, toStreamHandler(async ({ payload, emit }) => {
+      let sum = 0
+      for await (const value of payload) {
+        sum += value
+      }
+
+      emit(sum)
+    }))
+
+    const invoke = defineStreamInvoke(ctx, invokeDef)
+    const input = new ReadableStream<number>({
+      start(controller) {
+        controller.enqueue(4)
+        controller.enqueue(5)
+        controller.enqueue(6)
+        controller.close()
+      },
+    })
+
+    const outputs: number[] = []
+    for await (const value of invoke(input)) {
+      outputs.push(value)
+    }
+
+    expect(outputs).toEqual([15])
+  })
 })
