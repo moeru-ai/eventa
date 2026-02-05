@@ -8,6 +8,8 @@ import Worker from 'web-worker'
 import { describe, expect, it, vi } from 'vitest'
 
 import { createContext, defineOutboundWorkerEventa } from '.'
+import { createUntilTriggered } from '../..'
+import { defineEventa } from '../../eventa'
 import { defineInvoke, defineInvokeHandler } from '../../invoke'
 import { defineInvokeEventa } from '../../invoke-shared'
 import { generateWorkerPayload } from './internal'
@@ -75,6 +77,41 @@ describe('web workers', async () => {
     expect(res.output).toBe('Hello from worker thread!')
     expect(res.buffer).toBeInstanceOf(ArrayBuffer)
     expect((res.buffer as ArrayBuffer).byteLength).toBe(32)
+  })
+
+  it('should handle errors worker thread throws errors', async () => {
+    const worker = new Worker(new URL('./worker/test-worker-errored.ts', import.meta.url), { type: 'module' })
+    const { context: ctx } = createContext(worker)
+
+    const loadedEventa = defineEventa<string>('test-worker-loaded-event')
+
+    const until = createUntilTriggered(() => {})
+    const loadedHandler = vi.fn()
+    ctx.on(loadedEventa, (payload) => {
+      until.handler()
+      loadedHandler(payload)
+    })
+
+    await until.promise
+    expect(loadedHandler).toBeCalled()
+    expect(loadedHandler.mock.calls[0][0]).toStrictEqual({
+      _flowDirection: 'inbound',
+      body: 'loaded',
+      id: 'test-worker-loaded-event',
+      type: 'event',
+    })
+
+    const invokeEvents = defineInvokeEventa<{ output: string }, { input: string }>('test-worker-invoke')
+    const invoke = defineInvoke(ctx, invokeEvents)
+    await expect(invoke({ input: 'Hello, Worker!' }))
+      .rejects
+      // TODO(@nekomeowww): currently, the ErrorEvent thrown by @vitest/web-worker does not
+      // properly imply `ErrorEvent` (https://developer.mozilla.org/en-US/docs/Web/API/ErrorEvent) defined
+      // here with `message`, `filename`, `lineno`, `colno`, `error` properties.
+      // The thrown message contains un-assert-able string, so we just use toThrow here.
+      .toThrow()
+
+    await worker.terminate()
   })
 
   it('should be able to post message with transfer', async () => {
