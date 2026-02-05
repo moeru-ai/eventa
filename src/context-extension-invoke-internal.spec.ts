@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
 import { createContext } from './context'
+import { registerInvokeAbortEventListeners } from './context-extension-invoke-internal'
 import { defineEventa } from './eventa'
 import { defineInvoke } from './invoke'
 import { defineInvokeEventa } from './invoke-shared'
-import { registerInvokeAbortEventListeners } from './context-extension-invoke-internal'
 
 describe('context-extension-invoke-internal', () => {
   it('should reject pending invoke when abort event fires', async () => {
