@@ -152,6 +152,90 @@ Eventa comes with various adapters for common use scenarios across browsers and 
 </details>
 
 <details>
+  <summary>BroadcastChannel</summary>
+
+  ```ts
+  import { defineEventa } from '@moeru/eventa'
+  import { createContext } from '@moeru/eventa/adapters/broadcast-channel'
+
+  const channel = new BroadcastChannel('eventa-demo')
+  const { context: ctx } = createContext(channel)
+
+  const ping = defineEventa<{ message: string }>('bc:ping')
+  ctx.on(ping, ({ body }) => {
+    console.log('received', body.message)
+  })
+
+  ctx.emit(ping, { message: 'Hello from BroadcastChannel' })
+  ```
+</details>
+
+<details>
+  <summary>EventTarget</summary>
+
+  ```ts
+  import { defineInvoke, defineInvokeEventa, defineInvokeHandler } from '@moeru/eventa'
+  import { createContext } from '@moeru/eventa/adapters/event-target'
+
+  const eventTarget = new EventTarget()
+  const { context: ctx } = createContext(eventTarget)
+
+  const echoEvents = defineInvokeEventa<{ output: string }, { input: string }>('et:echo')
+  defineInvokeHandler(ctx, echoEvents, ({ input }) => ({ output: input.toUpperCase() }))
+
+  const echo = defineInvoke(ctx, echoEvents)
+  console.log(await echo({ input: 'eventa' })) // => { output: 'EVENTA' }
+  ```
+</details>
+
+<details>
+  <summary>EventEmitter (Node.js)</summary>
+
+  ```ts
+  import { EventEmitter } from 'node:events'
+
+  import { defineEventa } from '@moeru/eventa'
+  import { createContext } from '@moeru/eventa/adapters/event-emitter'
+
+  const emitter = new EventEmitter()
+  const { context: ctx } = createContext(emitter)
+
+  const logEvent = defineEventa<{ message: string }>('emitter:log')
+  ctx.on(logEvent, ({ body }) => console.log(body.message))
+  ctx.emit(logEvent, { message: 'Hello from EventEmitter' })
+  ```
+</details>
+
+<details>
+  <summary>Worker Threads (Node.js)</summary>
+
+  1. Main thread:
+      ```ts
+      import { Worker } from 'node:worker_threads'
+
+      import { defineInvoke, defineInvokeEventa } from '@moeru/eventa'
+      import { createContext } from '@moeru/eventa/adapters/worker-threads'
+
+      const worker = new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' })
+      const { context: mainCtx } = createContext(worker)
+
+      const helloEvents = defineInvokeEventa<{ output: string }, { input: string }>('node-worker-hello')
+      const hello = defineInvoke(mainCtx, helloEvents)
+      console.log(await hello({ input: 'Eventa' })) // => { output: 'Hello, Eventa' }
+      ```
+  2. Worker entry:
+      ```ts
+      import { defineInvokeEventa, defineInvokeHandler } from '@moeru/eventa'
+      import { createContext } from '@moeru/eventa/adapters/worker-threads/worker'
+
+      const helloEvents = defineInvokeEventa<{ output: string }, { input: string }>('node-worker-hello')
+
+      const { context: workerCtx } = createContext()
+      defineInvokeHandler(workerCtx, helloEvents, ({ input }) => ({ output: `Hello, ${input}` }))
+      ```
+</details>
+
+<details>
   <summary>WebSocket (Client)</summary>
 
   1. Open a `WebSocket` and wrap it with the native adapter:
