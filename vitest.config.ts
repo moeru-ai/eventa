@@ -6,6 +6,8 @@ export default defineConfig({
       '**/*.test.ts',
       '**/*.spec.ts',
     ],
-    setupFiles: ['@vitest/web-worker'],
+    setupFiles: [
+      '@vitest/web-worker',
+    ],
   },
 })

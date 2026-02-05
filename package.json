@@ -46,6 +46,16 @@
       "import": "./dist/adapters/event-target/index.mjs",
       "default": "./dist/adapters/event-target/index.mjs"
     },
+    "./adapters/worker-threads": {
+      "type": "./dist/adapters/worker-threads/index.mts",
+      "import": "./dist/adapters/worker-threads/index.mjs",
+      "default": "./dist/adapters/worker-threads/index.mjs"
+    },
+    "./adapters/worker-threads/worker": {
+      "type": "./dist/adapters/worker-threads/worker/index.mts",
+      "import": "./dist/adapters/worker-threads/worker/index.mjs",
+      "default": "./dist/adapters/worker-threads/worker/index.mjs"
+    },
     "./adapters/webworkers/worker": {
       "type": "./dist/adapters/webworkers/worker/index.mts",
       "import": "./dist/adapters/webworkers/worker/index.mjs",
@@ -121,6 +131,7 @@
     "eslint": "catalog:",
     "taze": "catalog:",
     "tsdown": "catalog:",
+    "tsx": "catalog:",
     "typescript": "catalog:",
     "unplugin-unused": "catalog:",
     "vite": "catalog:",

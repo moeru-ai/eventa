@@ -12,6 +12,7 @@ catalog:
   picomatch: ^4.0.3
   taze: ^19.9.2
   tsdown: ^0.17.4
+  tsx: ^4.21.0
   typescript: ^5.9.3
   unplugin-unused: ^0.5.6
   vite: ^7.2.7
