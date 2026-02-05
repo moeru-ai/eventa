@@ -392,6 +392,82 @@ defineStreamInvokeHandler(ctx, streamEvents, async function* ({ jobId }, options
 })
 ```
 
+#### Streaming Input
+
+Eventa supports stream inputs on unary invokes (client-streaming) and full bidirectional streaming. This mirrors the gRPC shapes:
+
+```proto
+// Client-streaming request -> unary response
+rpc RecordRoute(stream Point) returns (RouteSummary) {}
+
+// Bidirectional streaming request/response
+rpc RouteChat(stream RouteNote) returns (stream RouteNote) {}
+```
+
+Client-streaming input with `defineInvoke` (stream in, single response out):
+
+```ts
+import { createContext, defineInvoke, defineInvokeEventa, defineInvokeHandler } from '@moeru/eventa'
+
+const ctx = createContext()
+
+const recordRoute = defineInvokeEventa<
+  { distance: number, points: number },
+  ReadableStream<{ lat: number, lng: number }>
+>('rpc:record-route')
+
+defineInvokeHandler(ctx, recordRoute, async (stream) => {
+  let points = 0
+  for await (const _ of stream) {
+    points += 1
+  }
+  return { distance: points * 10, points }
+})
+
+const input = new ReadableStream({
+  start(controller) {
+    controller.enqueue({ lat: 0, lng: 0 })
+    controller.enqueue({ lat: 1, lng: 1 })
+    controller.close()
+  },
+})
+
+const invoke = defineInvoke(ctx, recordRoute)
+console.log(await invoke(input))
+```
+
+Bidirectional streaming with `defineStreamInvoke` (stream in, stream out):
+
+```ts
+import { createContext, defineInvokeEventa, defineStreamInvoke, defineStreamInvokeHandler } from '@moeru/eventa'
+
+const ctx = createContext()
+
+const routeChat = defineInvokeEventa<
+  { message: string },
+  ReadableStream<{ message: string }>
+>('rpc:route-chat')
+
+defineStreamInvokeHandler(ctx, routeChat, async function* (incoming) {
+  for await (const note of incoming) {
+    yield { message: `echo: ${note.message}` }
+  }
+})
+
+const outgoing = new ReadableStream({
+  start(controller) {
+    controller.enqueue({ message: 'hello' })
+    controller.enqueue({ message: 'from stream' })
+    controller.close()
+  },
+})
+
+const stream = defineStreamInvoke(ctx, routeChat)
+for await (const note of stream(outgoing)) {
+  console.log(note.message)
+}
+```
+
 #### Shorthands for `defineInvokeHandler` and `defineInvoke`
 
 When you have multiple invoke events to register handlers for, or to create invoke functions for, you can use `defineInvokeHandlers` and `defineInvokes` to do so in bulk.
@@ -428,7 +504,7 @@ pnpm test
 
 ## Similar projects
 
-- [`birpc`](https://github.com/antfu-collective/birpc): We dislike the way the API designs, we want fully free sharable invok-able functions
+- [`birpc`](https://github.com/antfu-collective/birpc): We dislike the way the API designs, we want fully free sharable invok-able functions, streaming input, streaming output, etc.
 - [`async-call-rpc`](https://github.com/Jack-Works/async-call-rpc): it only works with JSON-RPC, but the DX is similar
 
 ## License
