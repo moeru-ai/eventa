@@ -2,6 +2,7 @@ import type { EventContext } from './context'
 import type { Eventa } from './eventa'
 import type { InvokeEventa, ReceiveEvent, ReceiveEventError, SendEvent, SendEventAbort, SendEventStreamEnd } from './invoke-shared'
 
+import { getContextExtensionInvokeInternalConfig } from './context-extension-invoke-internal'
 import { defineEventa, nanoid } from './eventa'
 import { isReceiveEvent } from './invoke-shared'
 import { createAbortError, isAbortError, isAsyncIterable, isReadableStream } from './utils'
@@ -183,9 +184,34 @@ export function defineInvoke<
         finishReject(createAbortError(signal?.reason))
       }
 
+      // Hook into adapter-level fatal events (e.g., worker error) so any pending invoke
+      // is rejected immediately instead of waiting forever for a response.
+      const invokeInternalConfig = getContextExtensionInvokeInternalConfig(ctx)
+      const abortOffs: Array<() => void> = []
+      const onAbortEvent = (payload: Eventa<any>, eventOptions?: any) => {
+        // Workflow: adapter emits a fatal event -> we map it (if configured) -> reject this invoke.
+        const mappedError = invokeInternalConfig?.mapAbortError?.(payload, eventOptions)
+        if (typeof mappedError !== 'undefined') {
+          // eslint-disable-next-line ts/no-use-before-define
+          finishReject(mappedError)
+          return
+        }
+
+        // Default extraction for common `{ error }` payloads, otherwise reject with payload/body.
+        const body: any = payload?.body
+        const error = body && typeof body === 'object' && 'error' in body
+          ? body.error
+          : (typeof body !== 'undefined' ? body : payload)
+        // eslint-disable-next-line ts/no-use-before-define
+        finishReject(error)
+      }
+
       const cleanup = () => {
         ctx.off(invokeReceiveEvent)
         ctx.off(invokeReceiveEventError)
+        for (const off of abortOffs) {
+          off()
+        }
         if (signal) {
           signal.removeEventListener('abort', onAbort)
         }
@@ -235,6 +261,12 @@ export function defineInvoke<
         finishReject(error)
       })
 
+      if (invokeInternalConfig?.abortOnEvents?.length) {
+        for (const eventOrMatch of invokeInternalConfig.abortOnEvents) {
+          abortOffs.push(ctx.on(eventOrMatch as any, onAbortEvent as any))
+        }
+      }
+
       if (signal) {
         if (signal.aborted) {
           onAbort()
@@ -249,10 +281,16 @@ export function defineInvoke<
       }
       else {
         const sendChunk = (chunk: Req) => {
+          if (finished) {
+            return
+          }
           ctx.emit(event.sendEvent, { invokeId, content: chunk, isReqStream: true }, emitOptions as any) // emit: event_trigger
         }
 
         const sendEnd = () => {
+          if (finished) {
+            return
+          }
           ctx.emit(event.sendEventStreamEnd, { invokeId, content: undefined }, emitOptions as any) // emit: event_stream_end
         }
 

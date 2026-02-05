@@ -159,7 +159,10 @@ export interface EventContext<Extensions = undefined, EmitOptions = undefined> {
   off: <P>(eventOrMatchExpression: Eventa<P> | EventaMatchExpression<P>, handler?: (payload: Eventa<P>, options?: EmitOptions) => void) => void
 
   /**
-   * Extensions
+   * Extensions (adapter-specific).
+   *
+   * Known usage: webworkers/worker-threads populate internal invoke config via
+   * `extensions.__internal.invoke` to abort pending invokes on fatal errors.
    */
   extensions?: Extensions
 }
