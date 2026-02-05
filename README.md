@@ -315,6 +315,83 @@ for await (const update of sync({ jobId: 'import' })) {
 
 Both generator-style and imperative handlers are exercised in `src/stream.spec.ts:7`.
 
+#### Abort/Cancel
+
+Eventa supports cancellation via `AbortSignal` on the client side and exposes an `AbortController` inside handlers so you can stop work early.
+
+Client-side (unary invoke):
+
+```ts
+import { createContext, defineInvoke, defineInvokeEventa } from '@moeru/eventa'
+
+const ctx = createContext()
+const slowEvents = defineInvokeEventa<{ output: string }, { input: string }>('rpc:slow')
+const slow = defineInvoke(ctx, slowEvents)
+
+const controller = new AbortController()
+const promise = slow({ input: 'work' }, { signal: controller.signal })
+
+controller.abort('user cancelled')
+await promise // rejects with AbortError
+```
+
+Server-side handler (unary):
+
+```ts
+import { defineInvokeHandler } from '@moeru/eventa'
+
+defineInvokeHandler(ctx, slowEvents, async ({ input }, options) => {
+  const signal = options?.abortController?.signal
+  if (signal?.aborted) {
+    return { output: 'aborted' }
+  }
+
+  signal?.addEventListener('abort', () => {
+    // clean up resources, cancel timers, close connections, etc.
+  }, { once: true })
+
+  // ... do work
+  return { output: `done: ${input}` }
+})
+```
+
+Client-side (stream invoke):
+
+```ts
+import { defineInvokeEventa, defineStreamInvoke } from '@moeru/eventa'
+
+const streamEvents = defineInvokeEventa<{ type: 'progress' | 'done', value: number }, { jobId: string }>('rpc:stream')
+const stream = defineStreamInvoke(ctx, streamEvents)
+
+const controller = new AbortController()
+const results = stream({ jobId: 'import' }, { signal: controller.signal })
+
+setTimeout(() => controller.abort('timeout'), 1000)
+for await (const msg of results) {
+  console.log(msg)
+}
+```
+
+Server-side handler (streaming):
+
+```ts
+import { defineStreamInvokeHandler } from '@moeru/eventa'
+
+defineStreamInvokeHandler(ctx, streamEvents, async function* ({ jobId }, options) {
+  const signal = options?.abortController?.signal
+
+  for (let i = 0; i <= 5; i++) {
+    if (signal?.aborted) {
+      return
+    }
+    yield { type: 'progress', value: i * 20 }
+    await new Promise(r => setTimeout(r, 200))
+  }
+
+  yield { type: 'done', value: 100 }
+})
+```
+
 #### Shorthands for `defineInvokeHandler` and `defineInvoke`
 
 When you have multiple invoke events to register handlers for, or to create invoke functions for, you can use `defineInvokeHandlers` and `defineInvokes` to do so in bulk.
