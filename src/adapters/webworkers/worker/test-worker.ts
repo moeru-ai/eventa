@@ -1,6 +1,6 @@
 import { createContext } from '.'
-import { withTransfer } from '..'
 import { defineInvoke, defineInvokeHandler } from '../../../invoke'
+import { withTransfer } from '../../../invoke-extension-transfer'
 import { defineInvokeEventa } from '../../../invoke-shared'
 
 const { context: ctx } = createContext()

@@ -1,6 +1,5 @@
 import type { EventContext } from '../../context'
 import type { Eventa, EventTag } from '../../eventa'
-import type { ExtendableInvokeResponse } from '../../invoke'
 
 import { defineEventa, defineOutboundEventa } from '../../eventa'
 import { isExtendableInvokeResponseLike } from '../../invoke'
@@ -71,19 +70,5 @@ export function normalizeOnListenerParameters(event: Eventa<any>, options?: { tr
   return {
     body: eventPayload,
     transfer,
-  }
-}
-
-export interface WithTransfer<T> {
-  message: T
-  _transfer?: Transferable[]
-}
-
-export function withTransfer<T>(body: T, transfer?: Transferable[]): ExtendableInvokeResponse<T, EventContext<{ invokeResponse?: { transfer?: Transferable[] } }, any>> {
-  return {
-    response: body,
-    invokeResponse: {
-      transfer: transfer ?? [],
-    },
   }
 }
