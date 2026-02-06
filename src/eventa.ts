@@ -58,6 +58,8 @@ export interface Eventa<P = unknown> extends EventaLike<P, EventaType.Event> {
   body?: P
 }
 
+export type InferEventaPayload<E> = E extends Eventa<infer P> ? P : never
+
 export function defineEventa<P = undefined>(id?: string): Eventa<P> {
   if (!id) {
     id = nanoid()
