@@ -22,6 +22,38 @@ describe('invoke', () => {
     expect(result).toEqual({ id: 'alice-25' })
   })
 
+  it('should support lazy context with sync factory', async () => {
+    const ctx = createContext()
+    const events = defineInvokeEventa<{ id: string }, { name: string, age: number }>()
+    const getCtx = vi.fn(() => ctx)
+
+    defineInvokeHandler(ctx, events, ({ name, age }) => ({
+      id: `${name}-${age}`,
+    }))
+
+    const invoke = defineInvoke(getCtx, events)
+
+    const result = await invoke({ name: 'alice', age: 25 })
+    expect(result).toEqual({ id: 'alice-25' })
+    expect(getCtx).toHaveBeenCalledTimes(1)
+  })
+
+  it('should support lazy context with async factory', async () => {
+    const ctx = createContext()
+    const events = defineInvokeEventa<{ id: string }, { name: string, age: number }>()
+    const getCtx = vi.fn(async () => ctx)
+
+    defineInvokeHandler(ctx, events, ({ name, age }) => ({
+      id: `${name}-${age}`,
+    }))
+
+    const invoke = defineInvoke(getCtx, events)
+
+    const result = await invoke({ name: 'alice', age: 25 })
+    expect(result).toEqual({ id: 'alice-25' })
+    expect(getCtx).toHaveBeenCalledTimes(1)
+  })
+
   it('should handle request-response pattern with error', async () => {
     const ctx = createContext()
     const events = defineInvokeEventa<{ id: string }, { name: string, age: number }>()
