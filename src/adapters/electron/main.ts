@@ -52,7 +52,13 @@ export function createContext(ipcMain: IpcMain, window?: BrowserWindow, options?
           }
 
           if (onlySameWindow) {
-            if (window.webContents.id === options?.raw.ipcMainEvent.sender.id) {
+            // NOTICE: When the main process emits events proactively (e.g. a cursor screen point
+            // polling loop), there is no originating IPC message, so `options` is undefined and
+            // `options?.raw.ipcMainEvent` does not exist.
+            // Without this guard the condition `window.webContents.id === undefined` is always
+            // false, silently dropping every push-style event sent from the main process.
+            // Only apply the same-window filter when the emit originates from a renderer request.
+            if (!options?.raw?.ipcMainEvent || window.webContents.id === options.raw.ipcMainEvent.sender.id) {
               window?.webContents?.send(messageEventName, eventBody)
             }
           }
