@@ -3,6 +3,9 @@ import antfu from '@antfu/eslint-config'
 export default await antfu(
   {
     yaml: false,
+    ignores: [
+      'SKILL.md',
+    ],
     rules: {
       'import/order': 'off',
       'antfu/import-dedupe': 'error',
