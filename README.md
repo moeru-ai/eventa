@@ -5,7 +5,7 @@
 [![bundle][bundle-src]][bundle-href]
 [![JSDocs][jsdocs-src]][jsdocs-href]
 [![License][license-src]][license-href]
-[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/moeru-ai/eventa)
+[![Ask DeepWiki][deepwiki-src]][deepwiki-href]
 
 Transport-aware events powering ergonomic RPC and streaming flows.
 
@@ -530,3 +530,5 @@ MIT
 [license-href]: https://github.com/moeru-ai/eventa/blob/main/LICENSE
 [jsdocs-src]: https://img.shields.io/badge/jsdocs-reference-080f12?style=flat&colorA=080f12&colorB=1fa669
 [jsdocs-href]: https://www.jsdocs.io/package/@moeru/eventa
+[deepwiki-src]: https://deepwiki.com/badge.svg
+[deepwiki-href]: https://deepwiki.com/moeru-ai/eventa
