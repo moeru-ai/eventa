@@ -1,6 +1,6 @@
 import isGlobMatch from 'picomatch'
 
-import { customAlphabet } from 'nanoid'
+import { customAlphabet } from 'nanoid/non-secure'
 
 export function nanoid() {
   return customAlphabet('0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz', 16)()
