@@ -1,6 +1,6 @@
 import type { EventContext } from './context'
 import type { Eventa } from './eventa'
-import type { InvokeEventa, ReceiveEvent, ReceiveEventError, SendEvent, SendEventAbort, SendEventStreamEnd } from './invoke-shared'
+import type { InvokeEventa, InvokeHandlerEventa, ReceiveEvent, ReceiveEventError, SendEvent, SendEventAbort, SendEventStreamEnd } from './invoke-shared'
 
 import { getContextExtensionInvokeInternalConfig } from './context-extension-invoke-internal'
 import { defineEventa, nanoid } from './eventa'
@@ -90,24 +90,26 @@ interface InternalInvokeHandler<
   ResErr = Error,
   ReqErr = Error,
   EO = any,
+  M = undefined,
+  IM = undefined,
 > {
-  onSend: (params: InvokeEventa<Res, Req, ResErr, ReqErr>['sendEvent'], eventOptions?: EO) => void
-  onSendStreamEnd: (params: InvokeEventa<Res, Req, ResErr, ReqErr>['sendEventStreamEnd'], eventOptions?: EO) => void
-  onSendAbort: (params: InvokeEventa<Res, Req, ResErr, ReqErr>['sendEventAbort'], eventOptions?: EO) => void
+  onSend: (params: InvokeEventa<Res, Req, ResErr, ReqErr, M, IM>['sendEvent'], eventOptions?: EO) => void
+  onSendStreamEnd: (params: InvokeEventa<Res, Req, ResErr, ReqErr, M, IM>['sendEventStreamEnd'], eventOptions?: EO) => void
+  onSendAbort: (params: InvokeEventa<Res, Req, ResErr, ReqErr, M, IM>['sendEventAbort'], eventOptions?: EO) => void
 }
 
 export type HandlerMap<
-  EventMap extends Record<string, InvokeEventa<any, any, any, any>>,
+  EventMap extends Record<string, InvokeEventa<any, any, any, any, any, any>>,
   EO = any,
   EC extends EventContext<any, any> = EventContext<any, any>,
 > = {
-  [K in keyof EventMap]: EventMap[K] extends InvokeEventa<infer Res, infer Req, any, any>
+  [K in keyof EventMap]: EventMap[K] extends InvokeEventa<infer Res, infer Req, any, any, any, any>
     ? Handler<Res, Req, EC, EO>
     : never
 }
 
 export interface InvocableEventContext<E, EO> extends EventContext<E, EO> {
-  invokeHandlers?: Map<string, Map<Handler<any>, InternalInvokeHandler<any>>>
+  invokeHandlers?: Map<string, Map<Handler<any>, InternalInvokeHandler<any, any, any, any, any, any, any>>>
 }
 
 /**
@@ -165,10 +167,12 @@ export function defineInvoke<
   Req = undefined,
   ResErr = Error,
   ReqErr = Error,
+  M = undefined,
+  IM = undefined,
   CtxExt = any,
   EOpts = any,
   ECtx extends EventContext<CtxExt, EOpts> = EventContext<CtxExt, EOpts>,
->(ctx: ECtx | (() => ECtx | Promise<ECtx>), event: InvokeEventa<Res, Req, ResErr, ReqErr>): InvokeFunction<Res, Req, ECtx> {
+>(ctx: ECtx | (() => ECtx | Promise<ECtx>), event: InvokeEventa<Res, Req, ResErr, ReqErr, M, IM>): InvokeFunction<Res, Req, ECtx> {
   function getContext(): ECtx | Promise<ECtx> {
     if (typeof ctx === 'function') {
       return ctx()
@@ -182,8 +186,11 @@ export function defineInvoke<
       const ctx = resolvedCtx
       const invokeId = nanoid()
 
-      const invokeReceiveEvent = defineEventa(`${event.receiveEvent.id}-${invokeId}`) as ReceiveEvent<Res>
-      const invokeReceiveEventError = defineEventa(`${event.receiveEventError.id}-${invokeId}`) as ReceiveEventError<Res, Req, ResErr, ReqErr>
+      const invokeReceiveEvent = defineEventa(`${event.receiveEvent.id}-${invokeId}`) as ReceiveEvent<Res, Req, ResErr, ReqErr, M, IM>
+      delete invokeReceiveEvent.metadata
+      const invokeReceiveEventError = defineEventa(`${event.receiveEventError.id}-${invokeId}`) as ReceiveEventError<Res, Req, ResErr, ReqErr, M, IM>
+      delete invokeReceiveEventError.metadata
+
       const { signal, ...emitOptions } = (options ?? {}) as ExtractInvokeRequestOptions<ECtx> & Record<string, any>
       let finished = false
 
@@ -366,7 +373,7 @@ export function defineInvoke<
  */
 export function defineInvokes<
   EK extends string,
-  EventMap extends Record<EK, InvokeEventa<any, any, any, any>>,
+  EventMap extends Record<EK, InvokeEventa<any, any, any, any, any, any>>,
   CtxExt = any,
   EOpts = any,
   ECtx extends EventContext<CtxExt, EOpts> = EventContext<CtxExt, EOpts>,
@@ -403,11 +410,13 @@ export function defineInvokeHandler<
   Req = undefined,
   ResErr = Error,
   ReqErr = Error,
+  M = undefined,
+  IM = undefined,
   CtxExt = any,
   EOpts extends { raw?: any } = any,
 >(
   ctx: InvocableEventContext<CtxExt, EOpts>,
-  event: InvokeEventa<Res, Req, ResErr, ReqErr>,
+  event: InvokeHandlerEventa<Res, Req, ResErr, ReqErr, M, IM>,
   handler: Handler<Res, Req, InvocableEventContext<CtxExt, EOpts>, EOpts>,
 ): () => void {
   if (!ctx.invokeHandlers) {
@@ -420,7 +429,7 @@ export function defineInvokeHandler<
     ctx.invokeHandlers?.set(event.sendEvent.id, handlers)
   }
 
-  let internalHandler = handlers.get(handler) as InternalInvokeHandler<Res, Req, ResErr, ReqErr, EOpts> | undefined
+  let internalHandler = handlers.get(handler) as InternalInvokeHandler<Res, Req, ResErr, ReqErr, EOpts, M, IM> | undefined
   if (!internalHandler) {
     const streamStates = new Map<string, ReadableStreamDefaultController<Req>>()
     const abortControllers = new Map<string, AbortController>()
@@ -451,7 +460,7 @@ export function defineInvokeHandler<
       try {
         const response = await handler(payload as Req, handlerOptions) // Call the handler function with the request payload
         ctx.emit(
-          { ...defineEventa(`${event.receiveEvent.id}-${invokeId}`), invokeType: event.receiveEvent.invokeType } as ReceiveEvent<ExtendableInvokeResponse<Res, InvocableEventContext<CtxExt, EOpts>>>,
+          { ...defineEventa(`${event.receiveEvent.id}-${invokeId}`), invokeType: event.receiveEvent.invokeType } as ReceiveEvent<ExtendableInvokeResponse<Res, InvocableEventContext<CtxExt, EOpts>>, M, IM>,
           { invokeId, content: response },
           options,
         ) // emit: event_response
@@ -459,7 +468,7 @@ export function defineInvokeHandler<
       catch (error) {
         // TODO: to error object
         ctx.emit(
-          { ...defineEventa(`${event.receiveEventError.id}-${invokeId}`), invokeType: event.receiveEventError.invokeType } as ReceiveEventError<Res, Req, ResErr, ReqErr>,
+          { ...defineEventa(`${event.receiveEventError.id}-${invokeId}`), invokeType: event.receiveEventError.invokeType } as ReceiveEventError<Res, Req, ResErr, ReqErr, M, IM>,
           { invokeId, content: { error: error as ResErr } },
           options,
         )
@@ -470,7 +479,7 @@ export function defineInvokeHandler<
       }
     }
 
-    const onSend = async (payload: SendEvent<Res, Req, ResErr, ReqErr>, options: EOpts) => { // on: event_trigger
+    const onSend = async (payload: SendEvent<Res, Req, ResErr, ReqErr, M, IM>, options: EOpts) => { // on: event_trigger
       if (!payload.body) {
         return
       }
@@ -502,7 +511,7 @@ export function defineInvokeHandler<
       handleInvoke(invokeId, payload.body?.content as Req, options)
     }
 
-    const onSendStreamEnd = (payload: SendEventStreamEnd<Res, Req, ResErr, ReqErr>, options: EOpts) => { // on: event_stream_end
+    const onSendStreamEnd = (payload: SendEventStreamEnd<Res, Req, ResErr, ReqErr, M, IM>, options: EOpts) => { // on: event_stream_end
       if (!payload.body) {
         return
       }
@@ -530,7 +539,7 @@ export function defineInvokeHandler<
       streamStates.delete(invokeId)
     }
 
-    const onSendAbort = (payload: SendEventAbort<Res, Req, ResErr, ReqErr>, options: EOpts) => { // on: event_abort
+    const onSendAbort = (payload: SendEventAbort<Res, Req, ResErr, ReqErr, M, IM>, options: EOpts) => { // on: event_abort
       if (!payload.body) {
         return
       }

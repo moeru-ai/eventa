@@ -54,21 +54,83 @@ export interface EventaLike<_P = undefined, T extends EventaType = EventaType> {
   type?: T
 }
 
-export interface Eventa<P = unknown> extends EventaLike<P, EventaType.Event> {
+export interface Eventa<P = unknown, M = unknown, IM = unknown> extends EventaLike<P, EventaType.Event> {
   body?: P
+  /**
+   * Optional runtime metadata that can be attached to the eventa.
+   *
+   * NOTICE: for defineInvoke, and defineInvokeHandler, the metadata will be omitted
+   * for smaller chunk size, this means for metadata, the data contains will not be available in the defineInvokeHandler.
+   *
+   * This can be used for various purposes such as logging, debugging, or providing additional context about the eventa.
+   * Allowing the event handler to be able to access this metadata can enable more flexible and powerful event handling logic.
+   */
+  metadata?: M
+  /**
+   * Optional runtime metadata that can be attached to the eventa when invoking it.
+   *
+   * Unlike the `metadata` field, the `invokeMetadata` is specifically designed to be used when invoking the eventa, and it
+   * will be available in the defineInvokeHandler.
+   *
+   * This allows for a clear separation between the metadata that describes the eventa itself and the metadata that is relevant
+   * to the invocation of the eventa, providing more flexibility in how metadata is used and accessed within the event
+   * handling system.
+   */
+  invokeMetadata?: IM
 }
 
 export type InferEventaPayload<E> = E extends Eventa<infer P> ? P : never
 
-export function defineEventa<P = undefined>(id?: string): Eventa<P> {
+export function defineEventa<P = undefined, M = undefined, IM = undefined>(
+  id?: string,
+  options?: {
+    /**
+     * Optionally inherit many properties from another parent eventa.
+     */
+    inheritFrom?: Eventa<P, M, IM>
+    /**
+     * Optional runtime metadata that can be attached to the eventa.
+     *
+     * NOTICE: for defineInvoke, and defineInvokeHandler, the metadata will be omitted
+     * for smaller chunk size, this means for metadata, the data contains will not be available in the defineInvokeHandler.
+     *
+     * This can be used for various purposes such as logging, debugging, or providing additional context about the eventa.
+     * Allowing the event handler to be able to access this metadata can enable more flexible and powerful event handling logic.
+     */
+    metadata?: M
+    /**
+     * Optional runtime metadata that can be attached to the eventa when invoking it.
+     *
+     * Unlike the `metadata` field, the `invokeMetadata` is specifically designed to be used when invoking the eventa, and it
+     * will be available in the defineInvokeHandler.
+     *
+     * This allows for a clear separation between the metadata that describes the eventa itself and the metadata that is relevant
+     * to the invocation of the eventa, providing more flexibility in how metadata is used and accessed within the event
+     * handling system.
+     */
+    invokeMetadata?: IM
+  },
+): Eventa<P, M, IM> {
   if (!id) {
     id = nanoid()
   }
 
-  return {
-    id,
-    type: EventaType.Event,
+  const eventaObj: Eventa<P, M, IM> = {
+    id: options?.inheritFrom?.id || id,
+    type: options?.inheritFrom?.type || EventaType.Event,
   }
+
+  const metadata = options?.inheritFrom?.metadata || options?.metadata
+  if (metadata) {
+    eventaObj.metadata = metadata
+  }
+
+  const invokeMetadata = options?.inheritFrom?.invokeMetadata || options?.invokeMetadata
+  if (invokeMetadata) {
+    eventaObj.invokeMetadata = invokeMetadata
+  }
+
+  return eventaObj as Eventa<P, M, IM>
 }
 
 export interface EventaMatchExpression<P = undefined> extends EventaLike<P, EventaType.MatchExpression> {
@@ -95,6 +157,13 @@ export function or<P>(...matchExpression: Array<EventaMatchExpression<P>>): Even
   }
 }
 
+/**
+ * Match by is powerful utility function that allows you to create a match expression based on various criteria
+ * when working with eventa (event system).
+ *
+ * Semantics like glob matching, RegExp, or even custom matcher function can be used to create complex match
+ * expressions that can be used to filter and handle events in a flexible way.
+ */
 export function matchBy<P = undefined>(glob: string, inverted?: boolean): EventaMatchExpression<P>
 export function matchBy<P = undefined>(options: { ids: string[] }, inverted?: boolean): EventaMatchExpression<P>
 export function matchBy<P = undefined>(options: { eventa: Eventa<P>[] }, inverted?: boolean): EventaMatchExpression<P>
