@@ -169,176 +169,179 @@ export function defineInvoke<
   EOpts = any,
   ECtx extends EventContext<CtxExt, EOpts> = EventContext<CtxExt, EOpts>,
 >(ctx: ECtx | (() => ECtx | Promise<ECtx>), event: InvokeEventa<Res, Req, ResErr, ReqErr>): InvokeFunction<Res, Req, ECtx> {
-  async function getContext(): Promise<ECtx> {
+  function getContext(): ECtx | Promise<ECtx> {
     if (typeof ctx === 'function') {
-      const resolvedCtx = ctx()
-      if (resolvedCtx instanceof Promise) {
-        return await resolvedCtx
-      }
-
-      return resolvedCtx
+      return ctx()
     }
 
     return ctx
   }
 
-  function _invoke(req?: Req, options?: ExtractInvokeRequestOptions<ECtx>): Promise<Res> {
+  function createInvokePromise(resolvedCtx: ECtx, req?: Req, options?: ExtractInvokeRequestOptions<ECtx>): Promise<Res> {
     return new Promise<Res>((resolve, reject) => {
-      getContext().then((ctx) => {
-        const invokeId = nanoid()
+      const ctx = resolvedCtx
+      const invokeId = nanoid()
 
-        const invokeReceiveEvent = defineEventa(`${event.receiveEvent.id}-${invokeId}`) as ReceiveEvent<Res>
-        const invokeReceiveEventError = defineEventa(`${event.receiveEventError.id}-${invokeId}`) as ReceiveEventError<Res, Req, ResErr, ReqErr>
-        const { signal, ...emitOptions } = (options ?? {}) as ExtractInvokeRequestOptions<ECtx> & Record<string, any>
-        let finished = false
+      const invokeReceiveEvent = defineEventa(`${event.receiveEvent.id}-${invokeId}`) as ReceiveEvent<Res>
+      const invokeReceiveEventError = defineEventa(`${event.receiveEventError.id}-${invokeId}`) as ReceiveEventError<Res, Req, ResErr, ReqErr>
+      const { signal, ...emitOptions } = (options ?? {}) as ExtractInvokeRequestOptions<ECtx> & Record<string, any>
+      let finished = false
 
-        const onAbort = () => {
-          ctx.emit(event.sendEventAbort, { invokeId, content: signal?.reason }, emitOptions as any)
-          // eslint-disable-next-line ts/no-use-before-define
-          finishReject(createAbortError(signal?.reason))
-        }
+      const onAbort = () => {
+        ctx.emit(event.sendEventAbort, { invokeId, content: signal?.reason }, emitOptions as any)
+        // eslint-disable-next-line ts/no-use-before-define
+        finishReject(createAbortError(signal?.reason))
+      }
 
-        // Hook into adapter-level fatal events (e.g., worker error) so any pending invoke
-        // is rejected immediately instead of waiting forever for a response.
-        const invokeInternalConfig = getContextExtensionInvokeInternalConfig(ctx)
-        const abortOffs: Array<() => void> = []
-        const onAbortEvent = (payload: Eventa<any>, eventOptions?: any) => {
+      // Hook into adapter-level fatal events (e.g., worker error) so any pending invoke
+      // is rejected immediately instead of waiting forever for a response.
+      const invokeInternalConfig = getContextExtensionInvokeInternalConfig(ctx)
+      const abortOffs: Array<() => void> = []
+      const onAbortEvent = (payload: Eventa<any>, eventOptions?: any) => {
         // Workflow: adapter emits a fatal event -> we map it (if configured) -> reject this invoke.
-          const mappedError = invokeInternalConfig?.mapAbortError?.(payload, eventOptions)
-          if (typeof mappedError !== 'undefined') {
+        const mappedError = invokeInternalConfig?.mapAbortError?.(payload, eventOptions)
+        if (typeof mappedError !== 'undefined') {
           // eslint-disable-next-line ts/no-use-before-define
-            finishReject(mappedError)
-            return
-          }
-
-          // Default extraction for common `{ error }` payloads, otherwise reject with payload/body.
-          const body: any = payload?.body
-          const error = body && typeof body === 'object' && 'error' in body
-            ? body.error
-            : (typeof body !== 'undefined' ? body : payload)
-          // eslint-disable-next-line ts/no-use-before-define
-          finishReject(error)
+          finishReject(mappedError)
+          return
         }
 
-        const cleanup = () => {
-          ctx.off(invokeReceiveEvent)
-          ctx.off(invokeReceiveEventError)
-          for (const off of abortOffs) {
-            off()
-          }
-          if (signal) {
-            signal.removeEventListener('abort', onAbort)
-          }
+        const body: any = payload?.body
+        const error = body && typeof body === 'object' && 'error' in body
+          ? body.error
+          : (typeof body !== 'undefined' ? body : payload)
+
+        // eslint-disable-next-line ts/no-use-before-define
+        finishReject(error)
+      }
+
+      const cleanup = () => {
+        ctx.off(invokeReceiveEvent)
+        ctx.off(invokeReceiveEventError)
+        for (const off of abortOffs) {
+          off()
         }
-
-        const finishReject = (error?: any) => {
-          if (finished) {
-            return
-          }
-
-          finished = true
-          reject(error)
-          cleanup()
-        }
-
-        const finishResolve = (value: Res) => {
-          if (finished) {
-            return
-          }
-          finished = true
-          resolve(value)
-
-          cleanup()
-        }
-
-        ctx.on(invokeReceiveEvent, (payload) => {
-          if (!payload.body) {
-            return
-          }
-          if (payload.body.invokeId !== invokeId) {
-            return
-          }
-
-          const { content } = payload.body
-          finishResolve(content as Res)
-        })
-
-        ctx.on(invokeReceiveEventError, (payload) => {
-          if (!payload.body) {
-            return
-          }
-          if (payload.body.invokeId !== invokeId) {
-            return
-          }
-
-          const { error } = payload.body.content
-          finishReject(error)
-        })
-
-        if (invokeInternalConfig?.abortOnEvents?.length) {
-          for (const eventOrMatch of invokeInternalConfig.abortOnEvents) {
-            abortOffs.push(ctx.on(eventOrMatch as any, onAbortEvent as any))
-          }
-        }
-
         if (signal) {
-          if (signal.aborted) {
-            onAbort()
+          signal.removeEventListener('abort', onAbort)
+        }
+      }
+
+      const finishReject = (error?: any) => {
+        if (finished) {
+          return
+        }
+
+        finished = true
+        reject(error)
+        cleanup()
+      }
+
+      const finishResolve = (value: Res) => {
+        if (finished) {
+          return
+        }
+        finished = true
+        resolve(value)
+
+        cleanup()
+      }
+
+      ctx.on(invokeReceiveEvent, (payload) => {
+        if (!payload.body) {
+          return
+        }
+        if (payload.body.invokeId !== invokeId) {
+          return
+        }
+
+        const { content } = payload.body
+        finishResolve(content as Res)
+      })
+
+      ctx.on(invokeReceiveEventError, (payload) => {
+        if (!payload.body) {
+          return
+        }
+        if (payload.body.invokeId !== invokeId) {
+          return
+        }
+
+        const { error } = payload.body.content
+        finishReject(error)
+      })
+
+      if (invokeInternalConfig?.abortOnEvents?.length) {
+        for (const eventOrMatch of invokeInternalConfig.abortOnEvents) {
+          abortOffs.push(ctx.on(eventOrMatch as any, onAbortEvent as any))
+        }
+      }
+
+      if (signal) {
+        if (signal.aborted) {
+          onAbort()
+          return
+        }
+
+        signal.addEventListener('abort', onAbort, { once: true })
+      }
+
+      if (!isReadableStream<Req>(req) && !isAsyncIterable<Req>(req)) {
+        ctx.emit(event.sendEvent, { invokeId, content: req as Req }, emitOptions as any)
+      }
+      else {
+        const sendChunk = (chunk: Req) => {
+          if (finished) {
             return
           }
-
-          signal.addEventListener('abort', onAbort, { once: true })
+          ctx.emit(event.sendEvent, { invokeId, content: chunk, isReqStream: true }, emitOptions as any) // emit: event_trigger
         }
 
-        if (!isReadableStream<Req>(req) && !isAsyncIterable<Req>(req)) {
-          ctx.emit(event.sendEvent, { invokeId, content: req as Req }, emitOptions as any) // emit: event_trigger
+        const sendEnd = () => {
+          if (finished) {
+            return
+          }
+          ctx.emit(event.sendEventStreamEnd, { invokeId, content: undefined }, emitOptions as any) // emit: event_stream_end
         }
-        else {
-          const sendChunk = (chunk: Req) => {
-            if (finished) {
-              return
-            }
-            ctx.emit(event.sendEvent, { invokeId, content: chunk, isReqStream: true }, emitOptions as any) // emit: event_trigger
-          }
 
-          const sendEnd = () => {
-            if (finished) {
-              return
-            }
-            ctx.emit(event.sendEventStreamEnd, { invokeId, content: undefined }, emitOptions as any) // emit: event_stream_end
-          }
-
-          const pump = async () => {
-            try {
-              for await (const chunk of req) {
+        const pump = async () => {
+          try {
+            for await (const chunk of req) {
               // If aborted already, no further emits
-                if (signal?.aborted) {
-                  return
-                }
-
-                sendChunk(chunk)
-              }
-
-              sendEnd()
-            }
-            catch (error) {
-            // Make sure no further emits after abort
               if (signal?.aborted) {
                 return
               }
-              if (isAbortError(error)) {
-                ctx.emit(event.sendEventAbort, { invokeId, content: error }, emitOptions as any)
-                return
-              }
 
-              ctx.emit(event.sendEventError, { invokeId, content: error as ReqErr }, emitOptions as any) // emit: event_error
+              sendChunk(chunk)
             }
-          }
 
-          pump()
+            sendEnd()
+          }
+          catch (error) {
+            // Make sure no further emits after abort
+            if (signal?.aborted) {
+              return
+            }
+            if (isAbortError(error)) {
+              ctx.emit(event.sendEventAbort, { invokeId, content: error }, emitOptions as any)
+              return
+            }
+
+            ctx.emit(event.sendEventError, { invokeId, content: error as ReqErr }, emitOptions as any) // emit: event_error
+          }
         }
-      })
+
+        pump()
+      }
     })
+  }
+
+  function _invoke(req?: Req, options?: ExtractInvokeRequestOptions<ECtx>): Promise<Res> {
+    const resolvedCtx = getContext()
+    if (resolvedCtx instanceof Promise) {
+      return resolvedCtx.then(ctx => createInvokePromise(ctx, req, options))
+    }
+
+    return createInvokePromise(resolvedCtx, req, options)
   }
 
   return _invoke as InvokeFunction<Res, Req, ECtx>
