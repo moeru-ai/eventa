@@ -8,10 +8,11 @@ words:
   - crossws
   - eventa
   - listhen
+  - moeru
   - taze
+  - testdata
   - tsdown
   - unbird
-  - moeru
   - unplugin
   - webworkers
 ignoreWords: []

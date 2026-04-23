@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<body>
+  <script>
+    window.addEventListener('error', (event) => {
+      window.parent.postMessage({
+        type: 'window-message-test:iframe-bootstrap-error',
+        payload: {
+          message: event.error?.message ?? event.message,
+        },
+      }, '*')
+    })
+
+    window.addEventListener('unhandledrejection', (event) => {
+      window.parent.postMessage({
+        type: 'window-message-test:iframe-bootstrap-error',
+        payload: {
+          message: event.reason?.message ?? String(event.reason),
+        },
+      }, '*')
+    })
+  </script>
+  <script>
+    const { createContext, defineInvoke, defineInvokeHandler, defineInvokeEventa } = window.parent.__eventaWindowMessageTestApi__
+    const iframeEvents = defineInvokeEventa('window-message-browser-invoke-iframe')
+    const parentEvents = defineInvokeEventa('window-message-browser-invoke-parent')
+    const iframeErrorEvents = defineInvokeEventa('window-message-browser-invoke-iframe-error')
+
+    const { context } = createContext({
+      channel: 'window-message-browser-test',
+      currentWindow: window,
+      targetWindow: () => window.parent,
+      targetOrigin: '*',
+    })
+
+    defineInvokeHandler(context, iframeEvents, async (payload) => {
+      return { echoed: `iframe:${payload.message}` }
+    })
+
+    defineInvokeHandler(context, iframeErrorEvents, async (payload) => {
+      throw new Error(`iframe handler failed: ${payload.message}`)
+    })
+
+    const invokeParent = defineInvoke(context, parentEvents)
+    window.addEventListener('message', async (event) => {
+      if (event.data?.type !== 'window-message-test:invoke-parent')
+        return
+
+      const result = await invokeParent(event.data.payload)
+      window.parent.postMessage({
+        type: 'window-message-test:invoke-parent:result',
+        payload: result,
+      }, '*')
+    })
+  </script>
+</body>
+</html>

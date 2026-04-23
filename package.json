@@ -46,6 +46,11 @@
       "import": "./dist/adapters/event-target/index.mjs",
       "default": "./dist/adapters/event-target/index.mjs"
     },
+    "./adapters/window-message": {
+      "type": "./dist/adapters/window-message/index.mts",
+      "import": "./dist/adapters/window-message/index.mjs",
+      "default": "./dist/adapters/window-message/index.mjs"
+    },
     "./adapters/worker-threads": {
       "type": "./dist/adapters/worker-threads/index.mts",
       "import": "./dist/adapters/worker-threads/index.mjs",
@@ -100,8 +105,8 @@
     "up": "taze -w -r -I -f && pnpm prune && pnpm dedupe"
   },
   "peerDependencies": {
-    "electron": ">=30",
-    "h3": "2.0.0-beta.1",
+    "electron": ">=39",
+    "h3": ">=2.0.0",
     "web-worker": "^1.5.0"
   },
   "peerDependenciesMeta": {
@@ -124,6 +129,7 @@
     "@electron-toolkit/preload": "catalog:",
     "@moeru/std": "catalog:",
     "@types/node": "catalog:",
+    "@vitest/browser-playwright": "catalog:",
     "@vitest/coverage-v8": "catalog:",
     "@vitest/web-worker": "catalog:",
     "bumpp": "catalog:",

@@ -80,7 +80,7 @@ console.log(await someMethod(42)) // => { output: '42' }
 
 ### Adapters
 
-Eventa comes with various adapters for common use scenarios across browsers and Node.js, escalating the event orchestration in Electron, Web Workers, and WebSockets, etc.
+Eventa comes with various adapters for common use scenarios across browsers and Node.js, including Electron, `window.postMessage`, Web Workers, Worker Threads, BroadcastChannel, EventTarget, EventEmitter, and WebSockets.
 
 <details>
   <summary>Electron</summary>
@@ -177,6 +177,55 @@ Eventa comes with various adapters for common use scenarios across browsers and 
 
   ctx.emit(ping, { message: 'Hello from BroadcastChannel' })
   ```
+</details>
+
+<details>
+  <summary>Window Message (iframe / popup)</summary>
+
+  1. Define shared invoke events once:
+     ```ts
+     import { defineInvokeEventa } from '@moeru/eventa'
+
+     export const echoEvents = defineInvokeEventa<{ echoed: string }, { message: string }>('window:echo')
+     ```
+  2. In the host page, bridge Eventa to the child frame or popup:
+     ```ts
+     import { defineInvoke } from '@moeru/eventa'
+     import { createContext } from '@moeru/eventa/adapters/window-message'
+
+     import { echoEvents } from './shared-events'
+
+     const iframe = document.querySelector('iframe')!
+     const { context: hostCtx } = createContext({
+       channel: 'demo:window-message',
+       currentWindow: window,
+       targetWindow: () => iframe.contentWindow,
+       targetOrigin: '*',
+     })
+
+     const echo = defineInvoke(hostCtx, echoEvents)
+     console.log(await echo({ message: 'hello iframe' })) // => { echoed: 'iframe:hello iframe' }
+     ```
+  3. In the iframe or popup window, create the peer context and register handlers:
+     ```ts
+     import { defineInvokeHandler } from '@moeru/eventa'
+     import { createContext } from '@moeru/eventa/adapters/window-message'
+
+     import { echoEvents } from './shared-events'
+
+     const { context: childCtx } = createContext({
+       channel: 'demo:window-message',
+       currentWindow: window,
+       targetWindow: () => window.parent,
+       targetOrigin: '*',
+     })
+
+     defineInvokeHandler(childCtx, echoEvents, ({ message }) => ({
+       echoed: `iframe:${message}`,
+     }))
+     ```
+  4. This adapter handles normal invoke responses and handler-thrown errors once both sides have created their Eventa contexts. If the iframe or popup script throws before the bridge is established, Eventa may never start in that peer at all, so the caller will not get a transport-level failure automatically. More generally, `window.postMessage` does not expose a worker-style fatal error channel, so if the other window disappears, never boots, or crashes before replying, callers should use `AbortSignal` or their own timeout/liveness policy.
+
 </details>
 
 <details>
