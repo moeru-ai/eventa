@@ -135,6 +135,7 @@
     "bumpp": "catalog:",
     "crossws": "catalog:",
     "eslint": "catalog:",
+    "playwright": "catalog:",
     "taze": "catalog:",
     "tsdown": "catalog:",
     "tsx": "catalog:",

@@ -1,4 +1,4 @@
-import antfu from '@antfu/eslint-config'
+import antfu, { GLOB_MARKDOWN } from '@antfu/eslint-config'
 
 export default await antfu(
   {
@@ -7,9 +7,13 @@ export default await antfu(
       'skills/eventa/SKILL.md',
     ],
     rules: {
-      'import/order': 'off',
       'antfu/import-dedupe': 'error',
+      'import/order': 'off',
+      'no-console': ['error', { allow: ['warn', 'error', 'info'] }],
       'style/padding-line-between-statements': 'error',
+      'vue/prefer-separate-static-class': 'off',
+      'yaml/plain-scalar': 'off',
+      'markdown/require-alt-text': 'off',
       'perfectionist/sort-imports': [
         'error',
         {
@@ -37,6 +41,12 @@ export default await antfu(
           newlinesBetween: 'always',
         },
       ],
+    },
+  },
+  {
+    ignores: [GLOB_MARKDOWN],
+    rules: {
+      'no-console': 'off',
     },
   },
 )
