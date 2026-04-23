@@ -2,7 +2,7 @@
   "name": "@moeru/eventa",
   "type": "module",
   "version": "1.0.0-beta.4",
-  "packageManager": "pnpm@10.25.0",
+  "packageManager": "pnpm@10.33.2",
   "description": "Events are all you need",
   "author": {
     "name": "RainbowBird",
@@ -105,8 +105,8 @@
     "up": "taze -w -r -I -f && pnpm prune && pnpm dedupe"
   },
   "peerDependencies": {
-    "electron": ">=39",
-    "h3": ">=2.0.1-rc.17",
+    "electron": ">=39.8.9",
+    "h3": ">=2.0.1-rc.20",
     "web-worker": "^1.5.0"
   },
   "peerDependenciesMeta": {

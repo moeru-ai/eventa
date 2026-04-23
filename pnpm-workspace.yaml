@@ -1,23 +1,23 @@
 catalog:
-  '@antfu/eslint-config': ^6.7.1
+  '@antfu/eslint-config': ^6.7.3
   '@electron-toolkit/preload': ^3.0.2
-  '@moeru/std': 0.1.0-beta.15
-  '@types/node': ^25.0.2
+  '@moeru/std': 0.1.0-beta.18
+  '@types/node': ^25.6.0
   '@vitest/browser-playwright': ^4.1.5
   '@vitest/coverage-v8': ^4.1.5
   '@vitest/web-worker': ^4.1.5
-  bumpp: ^10.3.2
-  crossws: ^0.4.1
-  eslint: ^9.39.2
-  nanoid: ^5.1.6
-  picomatch: ^4.0.3
+  bumpp: ^10.4.1
+  crossws: ^0.4.5
+  eslint: ^9.39.4
+  nanoid: ^5.1.9
+  picomatch: ^4.0.4
   playwright: ^1.59.1
-  taze: ^19.9.2
+  taze: ^19.11.0
   tsdown: ^0.21.10
   tsx: ^4.21.0
   typescript: ^5.9.3
-  unplugin-unused: ^0.5.6
-  vite: ^7.2.7
+  unplugin-unused: ^0.5.7
+  vite: ^7.3.2
   vitest: ^4.1.5
 
 catalogMode: prefer
