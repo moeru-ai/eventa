@@ -72,7 +72,7 @@ importers:
   .:
     dependencies:
       electron:
-        specifier: '>=39.8.9'
+        specifier: '>=41.3.0'
         version: 41.3.0
       h3:
         specifier: '>=2.0.1-rc.20'
