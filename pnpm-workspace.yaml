@@ -1,5 +1,5 @@
 catalog:
-  '@antfu/eslint-config': ^6.7.3
+  '@antfu/eslint-config': ^8.2.0
   '@electron-toolkit/preload': ^3.0.2
   '@moeru/std': 0.1.0-beta.18
   '@types/node': ^25.6.0
