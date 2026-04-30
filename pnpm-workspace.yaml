@@ -9,7 +9,7 @@ catalog:
   bumpp: ^11.0.1
   crossws: ^0.4.5
   eslint: ^9.39.4
-  nanoid: ^5.1.9
+  nanoid: ^5.1.11
   picomatch: ^4.0.4
   playwright: ^1.59.1
   taze: ^19.11.0
