@@ -72,8 +72,8 @@ importers:
   .:
     dependencies:
       electron:
-        specifier: '>=41.3.0'
-        version: 41.3.0
+        specifier: '>=41.4.0'
+        version: 41.4.0
       h3:
         specifier: '>=2.0.1-rc.21'
         version: 2.0.1-rc.21(crossws@0.4.5(srvx@0.11.15))
@@ -92,7 +92,7 @@ importers:
         version: 6.7.3(@vue/compiler-sfc@3.5.18)(eslint@9.39.4(jiti@2.6.1))(typescript@5.9.3)(vitest@4.1.5)
       '@electron-toolkit/preload':
         specifier: 'catalog:'
-        version: 3.0.2(electron@41.3.0)
+        version: 3.0.2(electron@41.4.0)
       '@moeru/std':
         specifier: 'catalog:'
         version: 0.1.0-beta.18
@@ -1186,8 +1186,8 @@ packages:
   electron-to-chromium@1.5.253:
     resolution: {integrity: sha512-O0tpQ/35rrgdiGQ0/OFWhy1itmd9A6TY9uQzlqj3hKSu/aYpe7UIn5d7CU2N9myH6biZiWF3VMZVuup8pw5U9w==}
 
-  electron@41.3.0:
-    resolution: {integrity: sha512-2Q5aeocmFdeheZGDUTrAvSR3t+n0c3d104AJWWEnt7syJU0tE4VdibMYaPtQ47QuXSoUf0/xSsfUUvu/uSXIfg==}
+  electron@41.4.0:
+    resolution: {integrity: sha512-1afmxJGyrZ4bve+PDCs8YtNjjVu4cPwUtSjx36o6gyJWI0NvhebMKtIzzKNOScRyXntH2hX0i350Xgm3BKiEYQ==}
     engines: {node: '>= 12.20.55'}
     hasBin: true
 
@@ -2775,9 +2775,9 @@ snapshots:
       picocolors: 1.1.1
       sisteransi: 1.0.5
 
-  '@electron-toolkit/preload@3.0.2(electron@41.3.0)':
+  '@electron-toolkit/preload@3.0.2(electron@41.4.0)':
     dependencies:
-      electron: 41.3.0
+      electron: 41.4.0
 
   '@electron/get@2.0.3':
     dependencies:
@@ -3664,7 +3664,7 @@ snapshots:
 
   electron-to-chromium@1.5.253: {}
 
-  electron@41.3.0:
+  electron@41.4.0:
     dependencies:
       '@electron/get': 2.0.3
       '@types/node': 24.12.2
