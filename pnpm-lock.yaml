@@ -72,11 +72,11 @@ importers:
   .:
     dependencies:
       electron:
-        specifier: '>=41.5.0'
+        specifier: '>=39'
         version: 41.5.0
       h3:
-        specifier: '>=2.0.1-rc.21'
-        version: 2.0.1-rc.21(crossws@0.4.5(srvx@0.11.15))
+        specifier: '>=2.0.1-rc.22'
+        version: 2.0.1-rc.22(crossws@0.4.5(srvx@0.11.15))
       nanoid:
         specifier: 'catalog:'
         version: 5.1.11
@@ -1579,8 +1579,8 @@ packages:
   graphemer@1.4.0:
     resolution: {integrity: sha512-EtKwoO6kxCL9WO5xipiHTZlSzBm7WLT627TqC/uVRd0HKmq8NXyebnNYxDoBi7wt8eTWrUrKXCOVaFq9x1kgag==}
 
-  h3@2.0.1-rc.21:
-    resolution: {integrity: sha512-lDeqAgCQXWT7C+5Zs3ler2phZPeX5yTk9KqQuL8taSSngIhcPR0r83TZyYwTO/cLogm6a4+9slZcngrfdyZtrQ==}
+  h3@2.0.1-rc.22:
+    resolution: {integrity: sha512-Esv0DMIuPkCTSWCA0vO73vcTqwzH1wjSrAO1TXNu/K3up1sZHa9EKMapbmxCDYBeymC3fVTk4qxp7ogQWQ+KgA==}
     engines: {node: '>=20.11.1'}
     hasBin: true
     peerDependencies:
@@ -4149,7 +4149,7 @@ snapshots:
 
   graphemer@1.4.0: {}
 
-  h3@2.0.1-rc.21(crossws@0.4.5(srvx@0.11.15)):
+  h3@2.0.1-rc.22(crossws@0.4.5(srvx@0.11.15)):
     dependencies:
       rou3: 0.8.1
       srvx: 0.11.15
