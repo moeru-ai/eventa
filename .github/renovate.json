@@ -16,5 +16,13 @@
   ],
   "rangeStrategy": "bump",
   "labels": ["dependencies"],
-  "automergeStrategy": "squash"
+  "automergeStrategy": "squash",
+  "packageRules": [
+    {
+      "enabled": false,
+      "matchDepTypes": [
+        "peerDependencies"
+      ]
+    }
+  ]
 }
