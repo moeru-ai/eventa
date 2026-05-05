@@ -22,6 +22,9 @@
       "enabled": false,
       "matchDepTypes": [
         "peerDependencies"
+      ],
+      "matchPackageNames": [
+        "electron"
       ]
     }
   ]
