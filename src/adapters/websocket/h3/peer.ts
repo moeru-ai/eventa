@@ -4,7 +4,6 @@ import type { EventContext } from '../../../context'
 import type { DirectionalEventa, Eventa } from '../../../eventa'
 
 import { createContext as createBaseContext } from '../../../context'
-import { registerInvokeAbortEventListeners } from '../../../context-extension-invoke-internal'
 import { and, defineEventa, defineInboundEventa, defineOutboundEventa, EventaFlowDirection, matchBy } from '../../../eventa'
 import { generateWebsocketPayload, parseWebsocketPayload } from '../internal'
 
@@ -19,21 +18,10 @@ export function createPeerContext(peer: Peer): {
   const peerId = peer.id
   const ctx = createBaseContext<any, { raw: { message: Message } }>()
 
-  // Reject any in-flight `defineInvoke(...)` promises if this peer's transport
-  // dies. Mirrors the native ws adapter so server-side code that issues an
-  // invoke back to a client (push-style RPC) doesn't hang on close.
-  registerInvokeAbortEventListeners(ctx, wsDisconnectedEvent, (payload) => {
-    if (payload.id === wsDisconnectedEvent.id) {
-      const id = (payload as Eventa<{ id?: string }>).body?.id
-      return new Error(`eventa: invoke cancelled, peer disconnected${id ? ` (${id})` : ''}`)
-    }
-    if (payload.id === wsErrorEvent.id) {
-      const err = (payload as Eventa<{ error?: unknown }>).body?.error
-      return err instanceof Error ? err : new Error('eventa: invoke cancelled, peer error')
-    }
-    return undefined
-  })
-  registerInvokeAbortEventListeners(ctx, wsErrorEvent)
+  // NOTICE: This adapter only wires `message`. The h3 `close` / `error` hooks
+  // are owned by `createPeerHooks` (or the consumer's own h3 hook setup).
+  // Consumers that need invoke cancellation on peer close should call
+  // `ctx.abort(new Error('eventa: peer disconnected'))` from their close hook.
 
   ctx.on(and(
     matchBy((e: DirectionalEventa<any>) => e._flowDirection === EventaFlowDirection.Outbound || !e._flowDirection),

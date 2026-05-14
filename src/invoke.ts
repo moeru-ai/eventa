@@ -2,7 +2,6 @@ import type { EventContext } from './context'
 import type { Eventa } from './eventa'
 import type { InvokeEventa, InvokeHandlerEventa, ReceiveEvent, ReceiveEventError, SendEvent, SendEventAbort, SendEventStreamEnd } from './invoke-shared'
 
-import { getContextExtensionInvokeInternalConfig } from './context-extension-invoke-internal'
 import { defineEventa, nanoid } from './eventa'
 import { isReceiveEvent } from './invoke-shared'
 import { createAbortError, isAbortError, isAsyncIterable, isReadableStream } from './utils'
@@ -200,33 +199,23 @@ export function defineInvoke<
         finishReject(createAbortError(signal?.reason))
       }
 
-      // Hook into adapter-level fatal events (e.g., worker error) so any pending invoke
-      // is rejected immediately instead of waiting forever for a response.
-      const invokeInternalConfig = getContextExtensionInvokeInternalConfig(ctx)
-      const abortOffs: Array<() => void> = []
-      const onAbortEvent = (payload: Eventa<any>, eventOptions?: any) => {
-        // Workflow: adapter emits a fatal event -> we map it (if configured) -> reject this invoke.
-        const mappedError = invokeInternalConfig?.mapAbortError?.(payload, eventOptions)
-        if (typeof mappedError !== 'undefined') {
-          // eslint-disable-next-line ts/no-use-before-define
-          finishReject(mappedError)
-          return
-        }
-
-        const body: any = payload?.body
-        const error = body && typeof body === 'object' && 'error' in body
-          ? body.error
-          : (typeof body !== 'undefined' ? body : payload)
-
+      // Hook ctx.signal so transport-death (ws close, worker error,
+      // broadcast-channel dispose, etc) cascades into a synchronous reject
+      // for every in-flight invoke. The reason passed to `ctx.abort(reason)`
+      // by the adapter flows straight through — we don't wrap it in
+      // createAbortError because adapters produce semantically-rich errors
+      // ("eventa: ws disconnected (<url>)") that callers want to see verbatim.
+      const ctxSignal: AbortSignal | undefined = (ctx as { signal?: AbortSignal }).signal
+      const onCtxAbort = () => {
         // eslint-disable-next-line ts/no-use-before-define
-        finishReject(error)
+        finishReject(ctxSignal?.reason)
       }
 
       const cleanup = () => {
         ctx.off(invokeReceiveEvent)
         ctx.off(invokeReceiveEventError)
-        for (const off of abortOffs) {
-          off()
+        if (ctxSignal) {
+          ctxSignal.removeEventListener('abort', onCtxAbort)
         }
         if (signal) {
           signal.removeEventListener('abort', onAbort)
@@ -277,10 +266,12 @@ export function defineInvoke<
         finishReject(error)
       })
 
-      if (invokeInternalConfig?.abortOnEvents?.length) {
-        for (const eventOrMatch of invokeInternalConfig.abortOnEvents) {
-          abortOffs.push(ctx.on(eventOrMatch as any, onAbortEvent as any))
+      if (ctxSignal) {
+        if (ctxSignal.aborted) {
+          onCtxAbort()
+          return
         }
+        ctxSignal.addEventListener('abort', onCtxAbort, { once: true })
       }
 
       if (signal) {

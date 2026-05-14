@@ -71,7 +71,8 @@ export function createContext(eventTarget: EventTarget, options?: {
 
   return {
     context: ctx,
-    dispose: () => {
+    dispose: (reason?: unknown) => {
+      ctx.abort(reason ?? new Error('eventa: invoke cancelled, EventTarget adapter disposed'))
       cleanupRemoval.forEach(removal => removal.remove())
     },
   }

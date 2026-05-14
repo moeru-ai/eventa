@@ -164,10 +164,11 @@ describe('browser websocket adapter', () => {
   // had to maintain its own pending-RPC tracker and reject manually on
   // disconnect.
   //
-  // We fixed this by registering wsDisconnectedEvent and wsErrorEvent as abort
-  // events on the context inside `createContext`, with a mapAbortError that
-  // produces real Error instances. defineInvoke's existing abortOnEvents
-  // machinery then rejects every in-flight invoke when either event fires.
+  // We fixed this by giving every EventContext a lifetime AbortSignal
+  // (`ctx.signal`) and an `abort(reason)` method. The native ws adapter calls
+  // `ctx.abort(error)` from `onclose` / `onerror`; defineInvoke hooks
+  // `ctx.signal` so transport death cascades into a synchronous reject of
+  // every in-flight invoke. Modeled after Go's context.Context.
   it('issue: rejects pending invoke when socket closes mid-flight', async (testCtx) => {
     const port = randomBetween(40000, 50000)
     const app = new H3()
@@ -212,8 +213,8 @@ describe('browser websocket adapter', () => {
     const invocation = invoke('hello')
 
     // Drop the underlying socket without ever delivering a response. The
-    // adapter emits wsDisconnectedEvent, defineInvoke sees it via abortOnEvents,
-    // and rejects with the mapAbortError-produced Error.
+    // adapter calls ctx.abort(error) from onclose; defineInvoke is hooked to
+    // ctx.signal and rejects with the adapter-supplied Error.
     wsConn.close()
 
     await expect(invocation).rejects.toThrowError(/websocket disconnected/i)
