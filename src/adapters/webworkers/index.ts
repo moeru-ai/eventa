@@ -2,7 +2,6 @@ import type { EventContext } from '../../context'
 import type { DirectionalEventa, Eventa } from '../../eventa'
 
 import { createContext as createBaseContext } from '../../context'
-import { registerInvokeAbortEventListeners } from '../../context-extension-invoke-internal'
 import { and, defineInboundEventa, defineOutboundEventa, EventaFlowDirection, matchBy } from '../../eventa'
 import { generateWorkerPayload, parseWorkerPayload } from './internal'
 import { isWorkerEventa, normalizeOnListenerParameters, workerErrorEvent } from './shared'
@@ -15,8 +14,6 @@ export function createContext(worker: Worker) {
     },
     { raw: { message?: MessageEvent, error?: ErrorEvent, messageError?: MessageEvent }, transfer?: Transferable[] }
   >
-  // Configure invoke to fail fast on fatal worker errors (load/syntax/runtime).
-  registerInvokeAbortEventListeners(ctx, workerErrorEvent)
 
   ctx.on(and(
     matchBy((e: DirectionalEventa<any>) => e._flowDirection === EventaFlowDirection.Outbound || !e._flowDirection),
@@ -49,10 +46,14 @@ export function createContext(worker: Worker) {
   }
 
   worker.onerror = (error) => {
+    // Fatal worker error (load / syntax / runtime). Abort lifetime so any
+    // in-flight invoke rejects; emit the business event for non-invoke listeners.
+    ctx.abort(error instanceof Error ? error : new Error('eventa: invoke cancelled, webworker error'))
     ctx.emit(workerErrorEvent, { error }, { raw: { error } })
   }
 
   worker.onmessageerror = (error) => {
+    ctx.abort(new Error('eventa: invoke cancelled, webworker messageerror'))
     ctx.emit(workerErrorEvent, { error }, { raw: { messageError: error } })
   }
 

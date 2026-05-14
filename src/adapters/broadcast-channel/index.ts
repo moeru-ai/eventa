@@ -71,7 +71,10 @@ export function createContext(channel: BroadcastChannel, options?: BroadcastChan
 
   return {
     context: ctx,
-    dispose: () => {
+    dispose: (reason?: unknown) => {
+      // Cascade-cancel any in-flight `defineInvoke(...)` so callers don't hang
+      // on a torn-down channel (especially when `closeOnDispose: true`).
+      ctx.abort(reason ?? new Error('eventa: invoke cancelled, BroadcastChannel disposed'))
       cleanupRemoval.forEach(removal => removal.remove())
       if (closeOnDispose) {
         channel.close?.()

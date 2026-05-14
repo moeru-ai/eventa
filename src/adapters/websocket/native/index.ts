@@ -2,7 +2,6 @@ import type { EventContext } from '../../../context'
 import type { DirectionalEventa, Eventa } from '../../../eventa'
 
 import { createContext as createBaseContext } from '../../../context'
-import { registerInvokeAbortEventListeners } from '../../../context-extension-invoke-internal'
 import { and, defineEventa, defineInboundEventa, defineOutboundEventa, EventaFlowDirection, matchBy } from '../../../eventa'
 import { generateWebsocketPayload, parseWebsocketPayload } from '../internal'
 
@@ -12,22 +11,6 @@ export const wsErrorEvent = defineEventa<{ error: unknown }>()
 
 export function createContext(wsConn: WebSocket) {
   const ctx = createBaseContext() as EventContext<any, { raw: { message?: any, open?: Event, error?: Event, close?: CloseEvent } }>
-
-  // Reject any in-flight `defineInvoke(...)` promises when the socket dies.
-  // Without this, callers wait forever for a response that the closed transport
-  // can never deliver
-  registerInvokeAbortEventListeners(ctx, wsDisconnectedEvent, (payload) => {
-    if (payload.id === wsDisconnectedEvent.id) {
-      const url = (payload as Eventa<{ url?: string }>).body?.url
-      return new Error(`eventa: invoke cancelled, websocket disconnected${url ? ` (${url})` : ''}`)
-    }
-    if (payload.id === wsErrorEvent.id) {
-      const err = (payload as Eventa<{ error?: unknown }>).body?.error
-      return err instanceof Error ? err : new Error('eventa: invoke cancelled, websocket error')
-    }
-    return undefined
-  })
-  registerInvokeAbortEventListeners(ctx, wsErrorEvent)
 
   ctx.on(and(
     matchBy((e: DirectionalEventa<any>) => e._flowDirection === EventaFlowDirection.Outbound || !e._flowDirection),
@@ -53,10 +36,15 @@ export function createContext(wsConn: WebSocket) {
   }
 
   wsConn.onerror = (error) => {
+    // Socket-level error (not a per-message parse failure — those stay
+    // recoverable in `onmessage` above). Abort lifetime so any in-flight
+    // invoke rejects; emit the business event for non-invoke listeners.
+    ctx.abort(new Error('eventa: invoke cancelled, websocket error'))
     ctx.emit(wsErrorEvent, { error }, { raw: { error } })
   }
 
   wsConn.onclose = (close) => {
+    ctx.abort(new Error(`eventa: invoke cancelled, websocket disconnected (${wsConn.url})`))
     ctx.emit(wsDisconnectedEvent, { url: wsConn.url }, { raw: { close } })
   }
 
