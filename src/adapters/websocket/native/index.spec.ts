@@ -8,6 +8,8 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { createContext, wsConnectedEvent, wsDisconnectedEvent, wsErrorEvent } from '.'
 import { defineEventa, nanoid } from '../../../eventa'
+import { defineInvoke } from '../../../invoke'
+import { defineInvokeEventa } from '../../../invoke-shared'
 import { createUntil, randomBetween } from '../../../utils'
 
 describe('browser websocket adapter', () => {
@@ -152,5 +154,68 @@ describe('browser websocket adapter', () => {
     expect(disconnectData.id).toBe(wsDisconnectedEvent.id)
     expect(disconnectData.body).toBeTypeOf('object')
     expect(disconnectData.body?.id).not.toBe('')
+  })
+
+  // ROOT CAUSE:
+  //
+  // Before this fix, defineInvoke() returned a promise that only resolved or
+  // rejected on a per-invoke receive event. When the underlying socket closed,
+  // those listeners fell silent and the promise hung forever, so any caller
+  // had to maintain its own pending-RPC tracker and reject manually on
+  // disconnect.
+  //
+  // We fixed this by registering wsDisconnectedEvent and wsErrorEvent as abort
+  // events on the context inside `createContext`, with a mapAbortError that
+  // produces real Error instances. defineInvoke's existing abortOnEvents
+  // machinery then rejects every in-flight invoke when either event fires.
+  it('issue: rejects pending invoke when socket closes mid-flight', async (testCtx) => {
+    const port = randomBetween(40000, 50000)
+    const app = new H3()
+    // Server intentionally never replies to the invoke send, so the only path
+    // out of the pending promise is the disconnect-driven abort.
+    app.get('/ws', defineWebSocketHandler({}))
+
+    {
+      const server = serve(app, {
+        port,
+        plugins: [ws({
+          resolve: async (req) => {
+            const response = (await app.fetch(req)) as Response & { crossws: Partial<Hooks> }
+            return response.crossws
+          },
+        })],
+      })
+      testCtx.onTestFinished(() => {
+        server.close()
+      })
+    }
+
+    const wsConn = new WebSocket(`ws://localhost:${port}/ws`)
+    const opened = createUntil<void>({
+      async intervalHandler() {
+        if (wsConn.readyState === WebSocket.OPEN) {
+          return true
+        }
+
+        return false
+      },
+    })
+    wsConn.onopen = () => {
+      opened.handler()
+    }
+    const { context: ctx } = createContext(wsConn)
+    await opened.promise
+
+    const echoEvents = defineInvokeEventa<string, string>('test:echo')
+    const invoke = defineInvoke(ctx, echoEvents)
+
+    const invocation = invoke('hello')
+
+    // Drop the underlying socket without ever delivering a response. The
+    // adapter emits wsDisconnectedEvent, defineInvoke sees it via abortOnEvents,
+    // and rejects with the mapAbortError-produced Error.
+    wsConn.close()
+
+    await expect(invocation).rejects.toThrowError(/websocket disconnected/i)
   })
 })

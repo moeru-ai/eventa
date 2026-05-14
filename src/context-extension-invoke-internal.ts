@@ -37,11 +37,20 @@ export function getContextExtensionInvokeInternalConfig<EO = any>(ctx: EventCont
 
 /**
  * Register a fatal event/match expression that should terminate pending invokes.
- * Adapters call this to wire their error events (e.g. worker error) into invoke.
+ * Adapters call this to wire their error events (e.g. worker error, ws disconnect)
+ * into invoke so any in-flight `defineInvoke(...)` promise rejects immediately
+ * instead of hanging forever after the underlying transport dies.
+ *
+ * The optional `mapAbortError` is shared across all `abortOnEvents` registered
+ * on the context. When multiple events need different error shapes, dispatch
+ * inside the mapper by inspecting `payload.id`. Last write wins — a later call
+ * replaces the previously installed mapper, so adapters that own the context
+ * should set it once with a switch over their own event ids.
  */
 export function registerInvokeAbortEventListeners<EO = any>(
   ctx: EventContext<any, EO>,
   eventOrMatch: Eventa<any> | EventaMatchExpression<any>,
+  mapAbortError?: (payload: Eventa<any>, options?: EO) => unknown,
 ): InvokeInternalConfig<EO> {
   const extensions = ((ctx as EventContext<any, EO> & { extensions?: any }).extensions ?? {}) as Record<string, any>
   const internal = (extensions.__internal ?? {}) as Record<string, any>
@@ -53,6 +62,9 @@ export function registerInvokeAbortEventListeners<EO = any>(
   }
 
   invokeInternal.abortOnEvents = abortOnEvents
+  if (mapAbortError) {
+    invokeInternal.mapAbortError = mapAbortError
+  }
   internal.invoke = invokeInternal
   extensions.__internal = internal
   ;(ctx as EventContext<any, EO> & { extensions?: any }).extensions = extensions
