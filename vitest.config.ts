@@ -13,7 +13,7 @@ export default defineConfig(({ mode }) => {
           extends: true,
           test: {
             name: 'node',
-            include: ['src/**/*.test.ts'],
+            include: ['src/**/*.{spec,test}.ts'],
             exclude: ['src/**/*.browser.test.ts'],
             env: loadEnv(mode, join(cwd(), 'packages', 'stage-ui'), ''),
           },

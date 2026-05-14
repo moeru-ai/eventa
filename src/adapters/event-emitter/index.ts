@@ -64,7 +64,8 @@ export function createContext(eventTarget: NodeJS.EventEmitter, options?: {
 
   return {
     context: ctx,
-    dispose: () => {
+    dispose: (reason?: unknown) => {
+      ctx.abort(reason ?? new Error('eventa: invoke cancelled, EventEmitter adapter disposed'))
       cleanupRemoval.forEach(removal => removal.remove())
     },
   }

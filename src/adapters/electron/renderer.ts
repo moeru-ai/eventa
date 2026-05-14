@@ -65,7 +65,10 @@ export function createContext(ipcRenderer: IpcRenderer, options?: {
 
   return {
     context: ctx,
-    dispose: () => {
+    dispose: (reason?: unknown) => {
+      // Cascade-cancel any in-flight `defineInvoke(...)` so main-bound
+      // RPCs don't hang after the renderer-side adapter is torn down.
+      ctx.abort(reason ?? new Error('eventa: invoke cancelled, electron renderer ipc disposed'))
       cleanupRemoval.forEach(removal => removal.remove())
     },
   }

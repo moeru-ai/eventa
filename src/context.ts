@@ -15,6 +15,13 @@ export function createContext<Extensions = any, Options = { raw?: any }>(props: 
   const matchExpressionListeners = new Map<string, Set<(params: any, options?: Options) => any>>()
   const matchExpressionOnceListeners = new Map<string, Set<(params: any, options?: Options) => any>>()
 
+  // Lifetime AbortController for this context. Adapters call `ctx.abort(reason)`
+  // when the underlying transport dies (ws close, broadcast-channel dispose,
+  // worker error, etc). `defineInvoke` hooks `ctx.signal` so every in-flight
+  // invoke promise rejects in one cascade. Modeled after Go's context.Context:
+  // a single cancellation signal that flows to every operation derived from it.
+  const lifetimeController = new AbortController()
+
   const hooks = props.adapter?.(emit).hooks
 
   function emit<P>(event: Eventa<P>, payload: P, options?: Options) {
@@ -146,6 +153,16 @@ export function createContext<Extensions = any, Options = { raw?: any }>(props: 
           break
       }
     },
+
+    signal: lifetimeController.signal,
+
+    abort(reason?: unknown) {
+      // Idempotent — repeated calls are no-ops, matching AbortController semantics.
+      if (lifetimeController.signal.aborted) {
+        return
+      }
+      lifetimeController.abort(reason)
+    },
   }
 }
 
@@ -157,6 +174,26 @@ export interface EventContext<Extensions = undefined, EmitOptions = undefined> {
   on: <P>(eventOrMatchExpression: Eventa<P> | EventaMatchExpression<P>, handler: (payload: Eventa<P>, options?: EmitOptions) => void) => () => void
   once: <P>(eventOrMatchExpression: Eventa<P> | EventaMatchExpression<P>, handler: (payload: Eventa<P>, options?: EmitOptions) => void) => () => void
   off: <P>(eventOrMatchExpression: Eventa<P> | EventaMatchExpression<P>, handler?: (payload: Eventa<P>, options?: EmitOptions) => void) => void
+
+  /**
+   * Lifetime signal for this context. Aborts when `abort()` is called by an
+   * adapter (e.g. ws close, broadcast-channel dispose, worker error). Every
+   * `defineInvoke(...)` derived from this ctx hooks this signal so transport
+   * death cascades into a single synchronous reject of every in-flight invoke.
+   *
+   * Mirrors Go's `context.Context` lifetime semantics: one signal, many
+   * derived operations, one cancel cascades to all.
+   */
+  signal: AbortSignal
+
+  /**
+   * Abort this context's lifetime signal. Adapters call this at transport-death
+   * points; the `reason` flows through to `invoke()` promise rejections so
+   * callers see a meaningful Error rather than a generic AbortError.
+   *
+   * Idempotent — repeated calls are no-ops.
+   */
+  abort: (reason?: unknown) => void
 
   /**
    * Extensions (adapter-specific).

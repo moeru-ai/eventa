@@ -154,4 +154,60 @@ describe('h3 websocket adapter', { timeout: 2000 }, async () => {
       expect(res.output).toEqual('500')
     }
   })
+
+  // ROOT CAUSE:
+  //
+  // Before this fix, createPeerContext only wired the `message` hook, leaving
+  // `close` and `error` to consumers. A server-side defineInvoke() back to a
+  // client would hang forever when that peer disconnected, because nothing
+  // aborted the peer's ctx.signal. This mismatched the native ws adapter's
+  // self-aborting contract.
+  //
+  // We fixed this by wiring the `close` / `error` hooks directly in
+  // createPeerContext to call ctx.abort(...) in addition to emitting the
+  // business event — same shape as native ws onclose/onerror.
+  it('issue: rejects pending server-side invoke when peer disconnects', async (testCtx) => {
+    const port = randomBetween(40000, 50000)
+    const app = new H3()
+
+    const { untilLeastOneConnected, hooks } = createPeerHooks()
+    app.get('/ws', defineWebSocketHandler(hooks))
+
+    {
+      const server = serve(app, {
+        port,
+        plugins: [ws({
+          resolve: async (req) => {
+            const response = (await app.fetch(req)) as Response & { crossws: Partial<Hooks> }
+            return response.crossws
+          },
+        })],
+      })
+
+      testCtx.onTestFinished(() => {
+        server.close()
+      })
+    }
+
+    const opened = createUntil<void>()
+    const wsConn = new WebSocket(`ws://localhost:${port}/ws`)
+    wsConn.onopen = () => opened.handler()
+    await opened.promise
+
+    // Intentionally do NOT register a handler on the client side — the server
+    // will issue an invoke that has no responder, so the only path out of
+    // the pending promise is the disconnect-driven abort.
+    createContext(wsConn)
+    const { context: serverPeerContext } = await untilLeastOneConnected
+
+    const events = defineInvokeEventa<string, string>('test:peer-abort-cascade')
+    const invoke = defineInvoke(serverPeerContext, events)
+    const pending = invoke('hello')
+
+    // Drop the client side; crossws will fire the `close` hook on the server
+    // peer; createPeerContext.hooks.close calls ctx.abort(...).
+    wsConn.close()
+
+    await expect(pending).rejects.toThrowError(/peer disconnected/i)
+  })
 })

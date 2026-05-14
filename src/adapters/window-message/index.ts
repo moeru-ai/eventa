@@ -122,7 +122,8 @@ export function createContext(options: WindowMessageAdapterOptions) {
 
   return {
     context: ctx,
-    dispose: () => {
+    dispose: (reason?: unknown) => {
+      ctx.abort(reason ?? new Error('eventa: invoke cancelled, window message adapter disposed'))
       cleanupRemoval.forEach(removal => removal.remove())
     },
   }
