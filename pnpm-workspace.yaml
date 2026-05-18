@@ -2,7 +2,7 @@ catalog:
   '@antfu/eslint-config': ^6.7.3
   '@electron-toolkit/preload': ^3.0.2
   '@moeru/std': 0.1.0-beta.18
-  '@types/node': ^25.7.0
+  '@types/node': ^25.9.0
   '@vitest/browser-playwright': ^4.1.6
   '@vitest/coverage-v8': ^4.1.6
   '@vitest/web-worker': ^4.1.6
@@ -12,9 +12,9 @@ catalog:
   nanoid: ^5.1.11
   picomatch: ^4.0.4
   playwright: ^1.60.0
-  taze: ^19.11.0
+  taze: ^19.12.0
   tsdown: ^0.22.0
-  tsx: ^4.22.0
+  tsx: ^4.22.2
   typescript: ^5.9.3
   unplugin-unused: ^0.5.7
   vite: ^8.0.13
