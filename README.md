@@ -156,7 +156,7 @@ Eventa comes with various adapters for common use scenarios across browsers and 
      const { context: workerCtx } = createContext()
      defineInvokeHandler(workerCtx, syncEvents, ({ jobId }) => ({ status: `synced ${jobId}` }))
      ```
-  3. The same pattern works for streaming handlers and for sending transferrable(s) by switching to `defineStreamInvoke` or `defineOutboundWorkerEventa` as shown in `src/adapters/webworkers/index.spec.ts`.
+  3. The same pattern works for streaming handlers and for sending transferrable(s) by switching to `defineStreamInvoke` or `defineOutboundWorkerEventa` as shown in `src/adapters/webworkers/index.test.ts`.
 
 </details>
 
@@ -371,7 +371,7 @@ for await (const update of sync({ jobId: 'import' })) {
 }
 ```
 
-Both generator-style and imperative handlers are exercised in `src/stream.spec.ts:7`.
+Both generator-style and imperative handlers are exercised in `src/stream.test.ts:7`.
 
 #### Abort/Cancel
 
