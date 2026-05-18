@@ -3,7 +3,7 @@
 
 import type { Mock } from 'vitest'
 
-import Worker from 'web-worker'
+import '@vitest/web-worker'
 
 import { describe, expect, it, vi } from 'vitest'
 
