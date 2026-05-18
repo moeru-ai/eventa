@@ -3,8 +3,6 @@
 
 import type { Mock } from 'vitest'
 
-import '@vitest/web-worker'
-
 import { describe, expect, it, vi } from 'vitest'
 
 import { createContext, defineOutboundWorkerEventa } from '.'
@@ -13,6 +11,8 @@ import { defineEventa } from '../../eventa'
 import { defineInvoke, defineInvokeHandler } from '../../invoke'
 import { defineInvokeEventa } from '../../invoke-shared'
 import { generateWorkerPayload } from './internal'
+
+import '@vitest/web-worker'
 
 describe('web workers', async () => {
   it('should handle web worker events', async () => {
