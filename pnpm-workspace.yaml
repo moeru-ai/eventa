@@ -2,7 +2,7 @@ catalog:
   '@antfu/eslint-config': ^6.7.3
   '@electron-toolkit/preload': ^3.0.2
   '@moeru/std': 0.1.0-beta.18
-  '@types/node': ^25.9.0
+  '@types/node': ^25.9.1
   '@vitest/browser-playwright': ^4.1.6
   '@vitest/coverage-v8': ^4.1.6
   '@vitest/web-worker': ^4.1.6
