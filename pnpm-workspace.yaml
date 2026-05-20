@@ -15,7 +15,7 @@ catalog:
   taze: ^19.13.0
   tsdown: ^0.22.0
   tsx: ^4.22.3
-  typescript: ^5.9.3
+  typescript: ^6.0.3
   unplugin-unused: ^0.5.7
   vite: ^8.0.13
   vitest: ^4.1.7
