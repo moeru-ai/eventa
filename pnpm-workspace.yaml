@@ -12,9 +12,9 @@ catalog:
   nanoid: ^5.1.11
   picomatch: ^4.0.4
   playwright: ^1.60.0
-  taze: ^19.13.0
-  tsdown: ^0.22.0
-  tsx: ^4.22.3
+  taze: ^19.14.1
+  tsdown: ^0.22.1
+  tsx: ^4.22.4
   typescript: ^5.9.3
   unplugin-unused: ^0.5.7
   vite: ^8.0.14
