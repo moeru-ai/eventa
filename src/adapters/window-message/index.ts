@@ -4,6 +4,7 @@ import type { WindowMessageEnvelope } from './shared'
 
 import { createContext as createBaseContext } from '../../context'
 import { and, defineInboundEventa, defineOutboundEventa, EventaFlowDirection, matchBy } from '../../eventa'
+import { toError } from '../errors'
 import { generatePayload, parsePayload } from './internal'
 import { errorEvent } from './shared'
 
@@ -109,14 +110,14 @@ export function createContext(options: WindowMessageAdapterOptions) {
       }
       catch (error) {
         console.error('Failed to parse window message:', error)
-        ctx.emit(errorEvent, { error }, { raw: { error } })
+        ctx.emit(errorEvent, { kind: 'parse', error: toError(error, 'eventa: window message parse error') }, { raw: { error } })
       }
     }))
   }
 
   if (messageError) {
     cleanupRemoval.push(withRemoval(options.currentWindow, 'messageerror', (event) => {
-      ctx.emit(errorEvent, { error: event }, { raw: { messageError: event } })
+      ctx.emit(errorEvent, { kind: 'messageerror', error: toError(event, 'eventa: window messageerror'), message: event }, { raw: { messageError: event } })
     }))
   }
 
@@ -129,4 +130,5 @@ export function createContext(options: WindowMessageAdapterOptions) {
   }
 }
 
+export { errorEvent } from './shared'
 export type * from './shared'

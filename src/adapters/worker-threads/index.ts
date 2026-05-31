@@ -5,6 +5,7 @@ import type { DirectionalEventa, Eventa } from '../../eventa'
 
 import { createContext as createBaseContext } from '../../context'
 import { and, defineInboundEventa, defineOutboundEventa, EventaFlowDirection, matchBy } from '../../eventa'
+import { toError } from '../errors'
 import { generateWorkerPayload, parseWorkerPayload } from '../webworkers/internal'
 import { isWorkerEventa, normalizeOnListenerParameters, workerErrorEvent } from '../webworkers/shared'
 
@@ -43,20 +44,22 @@ export function createContext(worker: Worker) {
     }
     catch (error) {
       console.error('Failed to parse Node worker message:', error)
-      ctx.emit(workerErrorEvent, { error }, { raw: { message } })
+      ctx.emit(workerErrorEvent, { kind: 'parse', error: toError(error, 'eventa: node worker message parse error') }, { raw: { message } })
     }
   })
 
-  worker.on('error', (error) => {
+  worker.on('error', (event) => {
     // Fatal worker error. Abort lifetime so any in-flight invoke rejects;
     // emit the business event for non-invoke listeners.
-    ctx.abort(error instanceof Error ? error : new Error('eventa: invoke cancelled, node worker error'))
-    ctx.emit(workerErrorEvent, { error }, { raw: { error } })
+    const error = toError(event, 'eventa: invoke cancelled, node worker error')
+    ctx.abort(error)
+    ctx.emit(workerErrorEvent, { kind: 'fatal', error }, { raw: { error: event } })
   })
 
-  worker.on('messageerror', (error) => {
-    ctx.abort(new Error('eventa: invoke cancelled, node worker messageerror'))
-    ctx.emit(workerErrorEvent, { error }, { raw: { messageError: error } })
+  worker.on('messageerror', (event) => {
+    const error = toError(event, 'eventa: invoke cancelled, node worker messageerror')
+    ctx.abort(error)
+    ctx.emit(workerErrorEvent, { kind: 'messageerror', error, message: event }, { raw: { messageError: event } })
   })
 
   return {
@@ -64,5 +67,5 @@ export function createContext(worker: Worker) {
   }
 }
 
-export { defineOutboundWorkerEventa, defineWorkerEventa, isWorkerEventa } from '../webworkers/shared'
+export { defineOutboundWorkerEventa, defineWorkerEventa, isWorkerEventa, workerErrorEvent } from '../webworkers/shared'
 export type * from '../webworkers/shared'

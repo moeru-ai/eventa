@@ -1,8 +1,11 @@
 import type { EventContext } from '../../context'
 import type { Eventa, EventTag } from '../../eventa'
+import type { AdapterErrorPayload } from '../errors'
 
 import { defineEventa, defineOutboundEventa } from '../../eventa'
 import { isExtendableInvokeResponseLike } from '../../invoke'
+
+export type { AdapterErrorKind, AdapterErrorPayload } from '../errors'
 
 export interface WorkerPayload<T> {
   id: string
@@ -36,8 +39,14 @@ export function isWorkerEventa(event: Eventa<any>): event is WorkerEventa<any> {
     && event._workerTransfer === true
 }
 
-export const workerErrorEvent = defineEventa<{ error: unknown }>()
-export const workerMessageErrorEvent = defineEventa<{ error: unknown, message: any }>()
+/**
+ * Emitted by the worker adapters whenever a worker fails: an inbound message
+ * fails to parse (`kind: 'parse'`, non-fatal), the worker hits a fatal
+ * `error` (`kind: 'fatal'`), or a message can't be deserialized
+ * (`kind: 'messageerror'`). Has a stable id so it can be subscribed to across
+ * module boundaries.
+ */
+export const workerErrorEvent = defineEventa<AdapterErrorPayload>('eventa:worker:error')
 
 export function normalizeOnListenerParameters(event: Eventa<any>, options?: { transfer?: Transferable[] } | unknown) {
   let eventPayload: any = event.body

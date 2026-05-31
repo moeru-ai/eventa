@@ -3,8 +3,9 @@ import type { DirectionalEventa, Eventa } from '../../eventa'
 
 import { createContext as createBaseContext } from '../../context'
 import { and, defineInboundEventa, defineOutboundEventa, EventaFlowDirection, EventaType, matchBy } from '../../eventa'
+import { toError } from '../errors'
 import { generateCustomEventDetail, parseCustomEventDetail } from './internal'
-import { workerErrorEvent } from './shared'
+import { adapterErrorEvent } from './shared'
 
 function withRemoval(eventTarget: EventTarget, type: string, listener: EventListenerOrEventListenerObject | null) {
   eventTarget.addEventListener(type, listener)
@@ -53,15 +54,15 @@ export function createContext(eventTarget: EventTarget, options?: {
         ctx.emit(defineInboundEventa(type), payload.body, { raw: { event } })
       }
       catch (error) {
-        console.error('Failed to parse WebSocket message:', error)
-        ctx.emit(workerErrorEvent, { error }, { raw: { event } })
+        console.error('Failed to parse EventTarget message:', error)
+        ctx.emit(adapterErrorEvent, { kind: 'parse', error: toError(error, 'eventa: EventTarget message parse error') }, { raw: { event } })
       }
     }))
   }
 
   if (errorEventName) {
-    cleanupRemoval.push(withRemoval(eventTarget, errorEventName, (error) => {
-      ctx.emit(workerErrorEvent, { error }, { raw: { event: error } })
+    cleanupRemoval.push(withRemoval(eventTarget, errorEventName, (event) => {
+      ctx.emit(adapterErrorEvent, { kind: 'fatal', error: toError(event, 'eventa: EventTarget error') }, { raw: { event } })
     }))
   }
 
@@ -78,4 +79,5 @@ export function createContext(eventTarget: EventTarget, options?: {
   }
 }
 
+export { adapterErrorEvent } from './shared'
 export type * from './shared'

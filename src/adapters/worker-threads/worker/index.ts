@@ -7,6 +7,7 @@ import { parentPort } from 'node:worker_threads'
 
 import { createContext as createBaseContext } from '../../../context'
 import { and, defineInboundEventa, defineOutboundEventa, EventaFlowDirection, matchBy } from '../../../eventa'
+import { toError } from '../../errors'
 import { generateWorkerPayload, parseWorkerPayload } from '../../webworkers/internal'
 import { isWorkerEventa, normalizeOnListenerParameters, workerErrorEvent } from '../../webworkers/shared'
 
@@ -52,23 +53,28 @@ export function createContext(options?: {
     }
     catch (error) {
       console.error('Failed to parse Node worker message:', error)
-      ctx.emit(workerErrorEvent, { error }, { raw: { message } })
+      ctx.emit(workerErrorEvent, { kind: 'parse', error: toError(error, 'eventa: node worker message parse error') }, { raw: { message } })
     }
   })
 
-  messagePort.on('error', (error) => {
+  messagePort.on('error', (event) => {
     // Fatal port error. Abort lifetime so any in-flight invoke rejects;
     // emit the business event for non-invoke listeners.
-    ctx.abort(error instanceof Error ? error : new Error('eventa: invoke cancelled, node worker port error'))
-    ctx.emit(workerErrorEvent, { error }, { raw: { error } })
+    const error = toError(event, 'eventa: invoke cancelled, node worker port error')
+    ctx.abort(error)
+    ctx.emit(workerErrorEvent, { kind: 'fatal', error }, { raw: { error: event } })
   })
 
-  messagePort.on('messageerror', (error) => {
-    ctx.abort(new Error('eventa: invoke cancelled, node worker port messageerror'))
-    ctx.emit(workerErrorEvent, { error }, { raw: { messageError: error } })
+  messagePort.on('messageerror', (event) => {
+    const error = toError(event, 'eventa: invoke cancelled, node worker port messageerror')
+    ctx.abort(error)
+    ctx.emit(workerErrorEvent, { kind: 'messageerror', error, message: event }, { raw: { messageError: event } })
   })
 
   return {
     context: ctx,
   }
 }
+
+export { workerErrorEvent } from '../../webworkers/shared'
+export type { AdapterErrorKind, AdapterErrorPayload } from '../../webworkers/shared'
