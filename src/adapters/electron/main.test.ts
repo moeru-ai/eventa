@@ -56,10 +56,10 @@ describe('electron/main', async () => {
 
     const sendMocked = browserWindow.webContents.send as Mock
     expect(sendMocked).toBeCalledTimes(2)
-    expect(sendMocked.mock.calls[0][0]).toBeTypeOf('string')
+    expect(sendMocked.mock.calls[0][0]).toEqual('eventa-message')
     expect(sendMocked.mock.calls[0][1]).toBeTypeOf('object')
     expect(sendMocked.mock.calls[0][1].payload.body).toEqual({ message: 'Hello, outbound Eventa!' })
-    expect(sendMocked.mock.calls[1][0]).toBeTypeOf('string')
+    expect(sendMocked.mock.calls[1][0]).toEqual('eventa-message')
     expect(sendMocked.mock.calls[1][1]).toBeTypeOf('object')
     expect(sendMocked.mock.calls[1][1].payload.body).toEqual({ message: 'Hello, normal Eventa!' })
   })
