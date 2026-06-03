@@ -65,7 +65,7 @@ describe('h3 websocket adapter', { timeout: 2000 }, async () => {
     await untilHelloEventTriggered1.promise
     wsConn.close()
 
-    expect(handleHello).toBeCalledTimes(1)
+    expect(handleHello).toHaveBeenCalledTimes(1)
     expect(handleHello.mock.calls[0][0]).toEqual({ id: helloEvent.id, type: helloEvent.type, body: { result: 'Hello' } })
     expect(handleHello.mock.calls[0][1]).toBeTypeOf('object')
     expect(handleHello.mock.calls[0][1].raw).toBeTypeOf('object')
@@ -115,7 +115,7 @@ describe('h3 websocket adapter', { timeout: 2000 }, async () => {
     await untilHelloEventTriggered1.promise
     wsConn.close()
 
-    expect(handleHello).toBeCalledTimes(1)
+    expect(handleHello).toHaveBeenCalledTimes(1)
     expect(handleHello.mock.calls[0][0]).toEqual({ id: helloEvent.id, type: helloEvent.type, body: { result: 'Hello' } })
     expect(handleHello.mock.calls[0][1]).toBeTypeOf('object')
     expect(handleHello.mock.calls[0][1].raw).toBeTypeOf('object')

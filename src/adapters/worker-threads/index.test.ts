@@ -108,7 +108,7 @@ describe('node worker adapter', async () => {
     })
 
     await until.promise
-    expect(loadedHandler).toBeCalled()
+    expect(loadedHandler).toHaveBeenCalled()
     expect(loadedHandler.mock.calls[0][0]).toStrictEqual({
       _flowDirection: 'inbound',
       body: 'loaded',

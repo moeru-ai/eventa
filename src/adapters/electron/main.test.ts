@@ -33,9 +33,9 @@ describe('electron/main', async () => {
     // verify that the ipcMain.on is called to register listeners for inbound events
     ctx.on(eventa, wrapper)
     const onMocked = ipcMain.on as Mock
-    expect(onMocked).toBeCalledTimes(2)
-    expect(onMocked).toBeCalledWith('eventa-message', expect.any(Function))
-    expect(onMocked).toBeCalledWith('eventa-error', expect.any(Function))
+    expect(onMocked).toHaveBeenCalledTimes(2)
+    expect(onMocked).toHaveBeenCalledWith('eventa-message', expect.any(Function))
+    expect(onMocked).toHaveBeenCalledWith('eventa-error', expect.any(Function))
 
     // simulate receiving an event from ipcMain, every time we emit an inbound eventa, it will
     // emit another inbound eventa with transformed body along with raw data
@@ -55,7 +55,7 @@ describe('electron/main', async () => {
     ctx.emit(eventa, { message: 'Hello, normal Eventa!' })
 
     const sendMocked = browserWindow.webContents.send as Mock
-    expect(sendMocked).toBeCalledTimes(2)
+    expect(sendMocked).toHaveBeenCalledTimes(2)
     expect(sendMocked.mock.calls[0][0]).toEqual('eventa-message')
     expect(sendMocked.mock.calls[0][1]).toBeTypeOf('object')
     expect(sendMocked.mock.calls[0][1].payload.body).toEqual({ message: 'Hello, outbound Eventa!' })
@@ -84,9 +84,9 @@ describe('electron/main', async () => {
     // verify that the ipcMain.on is called to register listeners for inbound events
     ctx.on(eventa, wrapper)
     const onMocked = ipcMain.on as Mock
-    expect(onMocked).toBeCalledTimes(2)
-    expect(onMocked).toBeCalledWith('eventa-message', expect.any(Function))
-    expect(onMocked).toBeCalledWith('eventa-error', expect.any(Function))
+    expect(onMocked).toHaveBeenCalledTimes(2)
+    expect(onMocked).toHaveBeenCalledWith('eventa-message', expect.any(Function))
+    expect(onMocked).toHaveBeenCalledWith('eventa-error', expect.any(Function))
 
     // simulate receiving an event from ipcMain, every time we emit an inbound eventa, it will
     // emit another inbound eventa with transformed body along with raw data
@@ -108,7 +108,7 @@ describe('electron/main', async () => {
     ctx.emit(eventa, { message: 'Hello, normal Eventa!' }, { raw: { ipcMainEvent: { sender: browserWindow.webContents } as IpcMainEvent, event: { message: 'Hello, Event Target!' } } })
 
     const sendMocked = browserWindow.webContents.send as Mock
-    expect(sendMocked).toBeCalledTimes(2)
+    expect(sendMocked).toHaveBeenCalledTimes(2)
     expect(sendMocked.mock.calls[0][0]).toBeTypeOf('string')
     expect(sendMocked.mock.calls[0][1]).toBeTypeOf('object')
     expect(sendMocked.mock.calls[0][1].payload.body).toEqual({ message: 'Hello, outbound Eventa!' })
@@ -117,7 +117,7 @@ describe('electron/main', async () => {
     expect(sendMocked.mock.calls[1][1].payload.body).toEqual({ message: 'Hello, normal Eventa!' })
 
     const isDestroyedMocked = browserWindow.webContents.isDestroyed as Mock
-    expect(isDestroyedMocked).toBeCalledTimes(2)
+    expect(isDestroyedMocked).toHaveBeenCalledTimes(2)
   })
 
   it('should be able to invoke', async () => {
@@ -144,12 +144,12 @@ describe('electron/main', async () => {
     expect(res.output).toEqual('100')
 
     const onMocked = ipcMain.on as Mock
-    expect(onMocked).toBeCalledTimes(2)
-    expect(onMocked).toBeCalledWith('eventa-message', expect.any(Function))
-    expect(onMocked).toBeCalledWith('eventa-error', expect.any(Function))
+    expect(onMocked).toHaveBeenCalledTimes(2)
+    expect(onMocked).toHaveBeenCalledWith('eventa-message', expect.any(Function))
+    expect(onMocked).toHaveBeenCalledWith('eventa-error', expect.any(Function))
 
     const sendMocked = browserWindow.webContents.send as Mock
-    expect(sendMocked).toBeCalledTimes(2)
+    expect(sendMocked).toHaveBeenCalledTimes(2)
     expect(sendMocked.mock.calls[0][0]).toBeTypeOf('string')
     expect(sendMocked.mock.calls[0][1]).toBeTypeOf('object')
     expect(sendMocked.mock.calls[0][1].payload.body.content).toEqual({ input: 100 })
@@ -184,12 +184,12 @@ describe('electron/main', async () => {
     expect(res.output).toEqual('100')
 
     const onMocked = ipcMain.on as Mock
-    expect(onMocked).toBeCalledTimes(2)
-    expect(onMocked).toBeCalledWith('eventa-message', expect.any(Function))
-    expect(onMocked).toBeCalledWith('eventa-error', expect.any(Function))
+    expect(onMocked).toHaveBeenCalledTimes(2)
+    expect(onMocked).toHaveBeenCalledWith('eventa-message', expect.any(Function))
+    expect(onMocked).toHaveBeenCalledWith('eventa-error', expect.any(Function))
 
     const sendMocked = browserWindow.webContents.send as Mock
-    expect(sendMocked).toBeCalledTimes(2)
+    expect(sendMocked).toHaveBeenCalledTimes(2)
     expect(sendMocked.mock.calls[0][0]).toBeTypeOf('string')
     expect(sendMocked.mock.calls[0][1]).toBeTypeOf('object')
     expect(sendMocked.mock.calls[0][1].payload.body.content).toEqual({ input: 100 })

@@ -57,7 +57,7 @@ describe('h3 websocket adapter', { timeout: 2000 }, async () => {
       clientConnContext.emit(helloEvent, { result: 'Hello' }, { raw: { message: {} as Message } })
       await untilHelloEventTriggered1.promise
 
-      expect(handleHello).toBeCalledTimes(1)
+      expect(handleHello).toHaveBeenCalledTimes(1)
       expect(handleHello.mock.calls[0][0].type).toEqual(helloEvent.type)
       expect(handleHello.mock.calls[0][0].body).toEqual({ result: 'Hello' })
       expect(handleHello.mock.calls[0][1]).toBeTypeOf('object')
@@ -89,8 +89,8 @@ describe('h3 websocket adapter', { timeout: 2000 }, async () => {
       await untilPingEventTriggered1.promise
       await untilPongEventTriggered1.promise
 
-      expect(handlePing).toBeCalledTimes(1)
-      expect(handlePong).toBeCalledTimes(1)
+      expect(handlePing).toHaveBeenCalledTimes(1)
+      expect(handlePong).toHaveBeenCalledTimes(1)
     }
 
     wsConn.close()

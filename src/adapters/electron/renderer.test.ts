@@ -39,13 +39,13 @@ describe('electron/renderer', async () => {
     expect(event.options.raw).toHaveProperty('event')
 
     const onMocked = ipcRenderer.on as Mock
-    expect(onMocked).toBeCalledTimes(2)
-    expect(onMocked).toBeCalledWith('eventa-message', expect.any(Function))
-    expect(onMocked).toBeCalledWith('eventa-error', expect.any(Function))
+    expect(onMocked).toHaveBeenCalledTimes(2)
+    expect(onMocked).toHaveBeenCalledWith('eventa-message', expect.any(Function))
+    expect(onMocked).toHaveBeenCalledWith('eventa-error', expect.any(Function))
 
     const sendMocked = ipcRenderer.send as Mock
     ctx.emit(eventa, { message: 'Hello, Eventa!' }) // emit: eventa
-    expect(sendMocked).toBeCalledTimes(1)
+    expect(sendMocked).toHaveBeenCalledTimes(1)
     expect(sendMocked.mock.calls[0][0]).toBeTypeOf('string')
     expect(sendMocked.mock.calls[0][1]).toBeTypeOf('object')
     expect(sendMocked.mock.calls[0][1].payload.body).toEqual({ message: 'Hello, Eventa!' })
@@ -71,16 +71,16 @@ describe('electron/renderer', async () => {
     expect(res.output).toEqual('100')
 
     const onMocked = ipcRenderer.on as Mock
-    expect(onMocked).toBeCalledTimes(2)
-    expect(onMocked).toBeCalledWith('eventa-message', expect.any(Function))
-    expect(onMocked).toBeCalledWith('eventa-error', expect.any(Function))
+    expect(onMocked).toHaveBeenCalledTimes(2)
+    expect(onMocked).toHaveBeenCalledWith('eventa-message', expect.any(Function))
+    expect(onMocked).toHaveBeenCalledWith('eventa-error', expect.any(Function))
 
     const sendMocked = ipcRenderer.send as Mock
     // NOTICE: though in real world there is no chance the .send(...) could be
     // called twice inside a transport of a single invoke(...) call,
     // we will simplify the scenario here for testing purpose, as well as
     // in purpose of testing loopback / circular call of the eventa system.
-    expect(sendMocked).toBeCalledTimes(2)
+    expect(sendMocked).toHaveBeenCalledTimes(2)
 
     // Outbound
     expect(sendMocked.mock.calls[0][0]).toBeTypeOf('string')
