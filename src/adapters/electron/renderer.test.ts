@@ -25,7 +25,10 @@ describe('electron/renderer', async () => {
 
     const eventa = defineEventa<{ message: string }>()
     const { context: ctx } = createContext(ipcRenderer)
-    const { onceTriggered, wrapper } = createUntilTriggeredOnce((event: Eventa, options: { raw: any }) => ({ eventa: event, options }))
+    const { onceTriggered, wrapper } = createUntilTriggeredOnce((
+      event: Eventa,
+      options?: { raw: { ipcRendererEvent: IpcRendererEvent, event: unknown } },
+    ) => ({ eventa: event, options }))
 
     ctx.on(eventa, wrapper)
     ctx.emit(defineInboundEventa(eventa.id), { message: 'Hello, Event Target!' }, { raw: { ipcRendererEvent: {} as IpcRendererEvent, event: { message: 'Hello, Event Target!' } } }) // emit: event_trigger
@@ -33,10 +36,10 @@ describe('electron/renderer', async () => {
     expect(event.eventa.body).toEqual({ message: 'Hello, Event Target!' })
     expect(event.options).toBeDefined()
     expect(event.options).toBeTypeOf('object')
-    expect(event.options.raw).toBeDefined()
-    expect(event.options.raw).toBeTypeOf('object')
-    expect(event.options.raw).toHaveProperty('ipcRendererEvent')
-    expect(event.options.raw).toHaveProperty('event')
+    expect(event.options!.raw).toBeDefined()
+    expect(event.options!.raw).toBeTypeOf('object')
+    expect(event.options!.raw).toHaveProperty('ipcRendererEvent')
+    expect(event.options!.raw).toHaveProperty('event')
 
     const onMocked = ipcRenderer.on as Mock
     expect(onMocked).toHaveBeenCalledTimes(2)
