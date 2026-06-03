@@ -81,6 +81,11 @@
       "import": "./dist/adapters/websocket/h3/index.mjs",
       "default": "./dist/adapters/websocket/h3/index.mjs"
     },
+    "./adapters/websocket/hono": {
+      "type": "./dist/adapters/websocket/hono/index.mts",
+      "import": "./dist/adapters/websocket/hono/index.mjs",
+      "default": "./dist/adapters/websocket/hono/index.mjs"
+    },
     "./adapters/websocket": {
       "type": "./dist/adapters/websocket/index.mts",
       "import": "./dist/adapters/websocket/index.mjs",
@@ -107,6 +112,7 @@
   "peerDependencies": {
     "electron": ">=39",
     "h3": ">=2.0.1-rc.22",
+    "hono": ">=4.0.0",
     "web-worker": "^1.5.0"
   },
   "peerDependenciesMeta": {
@@ -114,6 +120,9 @@
       "optional": true
     },
     "h3": {
+      "optional": true
+    },
+    "hono": {
       "optional": true
     },
     "web-worker": {
@@ -135,6 +144,7 @@
     "bumpp": "catalog:",
     "crossws": "catalog:",
     "eslint": "catalog:",
+    "hono": "catalog:",
     "playwright": "catalog:",
     "taze": "catalog:",
     "tsdown": "catalog:",

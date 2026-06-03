@@ -15,6 +15,7 @@ export default defineConfig({
     'adapters/webworkers/worker/index': 'src/adapters/webworkers/worker/index.ts',
     'adapters/websocket/index': 'src/adapters/websocket/index.ts',
     'adapters/websocket/h3/index': 'src/adapters/websocket/h3/index.ts',
+    'adapters/websocket/hono/index': 'src/adapters/websocket/hono/index.ts',
     'adapters/websocket/native/index': 'src/adapters/websocket/native/index.ts',
   },
   dts: true,
