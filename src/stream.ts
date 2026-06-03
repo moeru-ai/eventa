@@ -1,4 +1,5 @@
 import type { EventContext } from './context'
+import type { ExtractInvokeRequestOptions } from './invoke'
 import type {
   InvokeEventa,
   ReceiveEvent,
@@ -55,9 +56,9 @@ export function defineStreamInvoke<
   E = any,
   EO = any,
 >(clientCtx: EventContext<E, EO>, event: InvokeEventa<Res, Req, ResErr, ReqErr>) {
-  return (req: Req | ReadableStream<Req> | AsyncIterable<Req>, options?: { signal?: AbortSignal } & EO) => {
+  return (req: Req | ReadableStream<Req> | AsyncIterable<Req>, options?: ExtractInvokeRequestOptions<EventContext<E, EO>>) => {
     const invokeId = nanoid()
-    const { signal, ...emitOptions } = (options ?? {}) as { signal?: AbortSignal } & Record<string, any>
+    const { signal, ...emitOptions } = (options ?? {}) as ExtractInvokeRequestOptions<EventContext<E, EO>> & Record<string, any>
     let onAbort: (() => void) | undefined
 
     const invokeReceiveEvent = defineEventa(`${event.receiveEvent.id}-${invokeId}`) as ReceiveEvent<Res>
