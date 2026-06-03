@@ -4,6 +4,7 @@ import type { DirectionalEventa, Eventa } from '../../../eventa'
 
 import { createContext as createBaseContext } from '../../../context'
 import { and, defineInboundEventa, defineOutboundEventa, EventaFlowDirection, matchBy } from '../../../eventa'
+import { toError } from '../../errors'
 import { generateWorkerPayload, parseWorkerPayload } from '../internal'
 import { isWorkerEventa, normalizeOnListenerParameters, workerErrorEvent } from '../shared'
 
@@ -39,11 +40,12 @@ export function createContext(options?: {
     messagePort.postMessage(data)
   })
 
-  self.onerror = (error) => {
+  self.onerror = (event) => {
     // Fatal worker-side error. Abort lifetime so any in-flight invoke rejects;
     // emit the business event for non-invoke listeners.
-    ctx.abort(error instanceof Error ? error : new Error('eventa: invoke cancelled, webworker self error'))
-    ctx.emit(workerErrorEvent, { error }, { raw: { error } })
+    const error = toError(event, 'eventa: invoke cancelled, webworker self error')
+    ctx.abort(error)
+    ctx.emit(workerErrorEvent, { kind: 'fatal', error }, { raw: { error: event } })
   }
 
   self.onmessage = (event) => {
@@ -58,7 +60,7 @@ export function createContext(options?: {
     }
     catch (error) {
       console.error('Failed to parse WebWorker message:', error)
-      ctx.emit(workerErrorEvent, { error }, { raw: { event } })
+      ctx.emit(workerErrorEvent, { kind: 'parse', error: toError(error, 'eventa: webworker message parse error') }, { raw: { event } })
     }
   }
 
@@ -66,3 +68,6 @@ export function createContext(options?: {
     context: ctx,
   }
 }
+
+export { workerErrorEvent } from '../shared'
+export type { AdapterErrorKind, AdapterErrorPayload } from '../shared'
