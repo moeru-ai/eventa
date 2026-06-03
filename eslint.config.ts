@@ -38,7 +38,7 @@ export default await antfu(
             'side-effect',
             'style',
           ],
-          newlinesBetween: 'always',
+          newlinesBetween: 1,
         },
       ],
     },

@@ -138,6 +138,7 @@
     "@electron-toolkit/preload": "catalog:",
     "@moeru/std": "catalog:",
     "@types/node": "catalog:",
+    "@types/picomatch": "catalog:",
     "@vitest/browser-playwright": "catalog:",
     "@vitest/coverage-v8": "catalog:",
     "@vitest/web-worker": "catalog:",

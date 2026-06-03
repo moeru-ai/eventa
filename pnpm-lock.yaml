@@ -18,6 +18,9 @@ catalogs:
     '@types/node':
       specifier: ^25.9.1
       version: 25.9.1
+    '@types/picomatch':
+      specifier: ^4.0.3
+      version: 4.0.3
     '@vitest/browser-playwright':
       specifier: ^4.1.8
       version: 4.1.8
@@ -102,6 +105,9 @@ importers:
       '@types/node':
         specifier: 'catalog:'
         version: 25.9.1
+      '@types/picomatch':
+        specifier: 'catalog:'
+        version: 4.0.3
       '@vitest/browser-playwright':
         specifier: 'catalog:'
         version: 4.1.8(playwright@1.60.0)(vite@8.0.16(@types/node@25.9.1)(esbuild@0.28.0)(jiti@2.6.1)(tsx@4.22.4)(yaml@2.9.0))(vitest@4.1.8)
@@ -870,6 +876,9 @@ packages:
 
   '@types/node@25.9.1':
     resolution: {integrity: sha512-xfrlY7UD5rMJk3ZVJP8BNzS28J36YJg+xp+LPXV1TdWxr8uMH5A860QNxYDGQe/ylDSgjxE52Q9VnO7p75tJxg==}
+
+  '@types/picomatch@4.0.3':
+    resolution: {integrity: sha512-iG0T6+nYJ9FAPmx9SsUlnwcq1ZVRuCXcVEvWnntoPlrOpwtSTKNDC9uVAxTsC3PUvJ+99n4RpAcNgBbHX3JSnQ==}
 
   '@types/responselike@1.0.3':
     resolution: {integrity: sha512-H/+L+UkTV33uf49PH5pCAUBVPNj2nDBXTN+qS1dOwyyg24l3CcicicCA7ca+HMvJBZcFgl5r8e+RR6elsb4Lyw==}
@@ -3275,6 +3284,8 @@ snapshots:
   '@types/node@25.9.1':
     dependencies:
       undici-types: 7.24.6
+
+  '@types/picomatch@4.0.3': {}
 
   '@types/responselike@1.0.3':
     dependencies:

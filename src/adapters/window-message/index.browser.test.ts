@@ -215,7 +215,7 @@ describe('window message adapter', () => {
 
     const settled = await Promise.race([
       promise.then(() => 'resolved' as const, () => 'rejected' as const),
-      new Promise<'pending'>(resolve => setTimeout(() => resolve('pending'), 50)),
+      new Promise<'pending'>(resolve => setTimeout(resolve, 50, 'pending')),
     ])
 
     expect(settled).toBe('pending')

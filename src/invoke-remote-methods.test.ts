@@ -200,8 +200,8 @@ describe('invoke-remote-methods', () => {
     withRemoteMethods({ allow: true })
       .defineInvokeHandler(ctx, events, ({ options }) => {
         const proto = Object.getPrototypeOf(options)
-        const hasGetter = Object.prototype.hasOwnProperty.call(options, '__defineGetter__')
-        const hasSetter = Object.prototype.hasOwnProperty.call(options, '__defineSetter__')
+        const hasGetter = Object.hasOwn(options, '__defineGetter__')
+        const hasSetter = Object.hasOwn(options, '__defineSetter__')
         return {
           ok: proto === null && hasGetter && hasSetter,
         }
@@ -222,8 +222,8 @@ describe('invoke-remote-methods', () => {
     withRemoteMethods({ allow: true })
       .defineInvokeHandler(ctx, events, ({ options }) => {
         const proto = Object.getPrototypeOf(options)
-        const hasToString = Object.prototype.hasOwnProperty.call(options, 'toString')
-        const hasValueOf = Object.prototype.hasOwnProperty.call(options, 'valueOf')
+        const hasToString = Object.hasOwn(options, 'toString')
+        const hasValueOf = Object.hasOwn(options, 'valueOf')
         return {
           ok: proto === null && hasToString && hasValueOf,
         }

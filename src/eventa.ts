@@ -183,7 +183,7 @@ export function matchBy<P = undefined, E extends Eventa<P> = Eventa<P>>(
 ): EventaMatchExpression<P> {
   const id = nanoid()
 
-  let matcher: (event: E) => boolean | Promise<boolean> = () => false
+  let matcher: (event: Eventa<P>) => boolean | Promise<boolean> = () => false
   if (typeof matchExpressionPossibleValues === 'string') {
     matcher = (eventa) => {
       return isGlobMatch(matchExpressionPossibleValues)(eventa.id)
@@ -231,7 +231,7 @@ export function matchBy<P = undefined, E extends Eventa<P> = Eventa<P>>(
     }
   }
   else if (typeof matchExpressionPossibleValues === 'function') {
-    matcher = matchExpressionPossibleValues
+    matcher = matchExpressionPossibleValues as (event: Eventa<P>) => boolean | Promise<boolean>
   }
 
   return {

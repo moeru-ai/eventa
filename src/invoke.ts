@@ -92,9 +92,9 @@ interface InternalInvokeHandler<
   M = undefined,
   IM = undefined,
 > {
-  onSend: (params: InvokeEventa<Res, Req, ResErr, ReqErr, M, IM>['sendEvent'], eventOptions?: EO) => void
-  onSendStreamEnd: (params: InvokeEventa<Res, Req, ResErr, ReqErr, M, IM>['sendEventStreamEnd'], eventOptions?: EO) => void
-  onSendAbort: (params: InvokeEventa<Res, Req, ResErr, ReqErr, M, IM>['sendEventAbort'], eventOptions?: EO) => void
+  onSend: (params: Eventa<NonNullable<InvokeEventa<Res, Req, ResErr, ReqErr, M, IM>['sendEvent']['body']>>, eventOptions?: EO) => void
+  onSendStreamEnd: (params: Eventa<NonNullable<InvokeEventa<Res, Req, ResErr, ReqErr, M, IM>['sendEventStreamEnd']['body']>>, eventOptions?: EO) => void
+  onSendAbort: (params: Eventa<NonNullable<InvokeEventa<Res, Req, ResErr, ReqErr, M, IM>['sendEventAbort']['body']>>, eventOptions?: EO) => void
 }
 
 export type HandlerMap<
@@ -108,7 +108,7 @@ export type HandlerMap<
 }
 
 export interface InvocableEventContext<E, EO> extends EventContext<E, EO> {
-  invokeHandlers?: Map<string, Map<Handler<any>, InternalInvokeHandler<any, any, any, any, any, any, any>>>
+  invokeHandlers?: Map<string, Map<Handler<any, any, any, any>, InternalInvokeHandler<any, any, any, any, any, any, any>>>
 }
 
 /**
@@ -470,7 +470,7 @@ export function defineInvokeHandler<
       }
     }
 
-    const onSend = async (payload: SendEvent<Res, Req, ResErr, ReqErr, M, IM>, options: EOpts) => { // on: event_trigger
+    const onSend = async (payload: Eventa<NonNullable<SendEvent<Res, Req, ResErr, ReqErr, M, IM>['body']>>, options?: EOpts) => { // on: event_trigger
       if (!payload.body) {
         return
       }
@@ -502,7 +502,7 @@ export function defineInvokeHandler<
       handleInvoke(invokeId, payload.body?.content as Req, options)
     }
 
-    const onSendStreamEnd = (payload: SendEventStreamEnd<Res, Req, ResErr, ReqErr, M, IM>, options: EOpts) => { // on: event_stream_end
+    const onSendStreamEnd = (payload: Eventa<NonNullable<SendEventStreamEnd<Res, Req, ResErr, ReqErr, M, IM>['body']>>, options?: EOpts) => { // on: event_stream_end
       if (!payload.body) {
         return
       }
@@ -530,7 +530,7 @@ export function defineInvokeHandler<
       streamStates.delete(invokeId)
     }
 
-    const onSendAbort = (payload: SendEventAbort<Res, Req, ResErr, ReqErr, M, IM>, options: EOpts) => { // on: event_abort
+    const onSendAbort = (payload: Eventa<NonNullable<SendEventAbort<Res, Req, ResErr, ReqErr, M, IM>['body']>>, options?: EOpts) => { // on: event_abort
       if (!payload.body) {
         return
       }
@@ -581,9 +581,9 @@ export function defineInvokeHandler<
   }
 
   return () => {
-    ctx.off(event.sendEvent, internalHandler.onSend)
-    ctx.off(event.sendEventStreamEnd, internalHandler.onSendStreamEnd)
-    ctx.off(event.sendEventAbort, internalHandler.onSendAbort)
+    ctx.off(event.sendEvent, internalHandler!.onSend)
+    ctx.off(event.sendEventStreamEnd, internalHandler!.onSendStreamEnd)
+    ctx.off(event.sendEventAbort, internalHandler!.onSendAbort)
   }
 }
 
