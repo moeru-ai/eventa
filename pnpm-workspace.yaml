@@ -19,7 +19,7 @@ catalog:
   picomatch: ^4.0.4
   playwright: ^1.60.0
   taze: ^19.14.1
-  tsdown: ^0.22.1
+  tsdown: ^0.22.2
   tsx: ^4.22.4
   typescript: ^6.0.3
   unplugin-unused: ^0.5.7
