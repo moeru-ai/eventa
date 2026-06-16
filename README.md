@@ -78,6 +78,107 @@ const someMethod = defineInvoke(ctx, someMethodDefine)
 console.log(await someMethod(42)) // => { output: '42' }
 ```
 
+### Channels
+
+Channels connect existing Eventa contexts. They forward ordinary events and the internal invoke events used by `defineInvoke`, so the same API works for event fan-out, RPC forwarding, and transport bridges such as iframe -> WebSocket -> server.
+
+Use `pipeChannel(...)` for one-way forwarding:
+
+```ts
+import { createContext, defineEventa, pipeChannel } from '@moeru/eventa'
+
+const source = createContext()
+const firstTarget = createContext()
+const secondTarget = createContext()
+
+const message = defineEventa<{ text: string }>('message')
+
+pipeChannel(source, firstTarget, secondTarget)
+
+firstTarget.on(message, ({ body }) => console.log('first', body.text))
+secondTarget.on(message, ({ body }) => console.log('second', body.text))
+
+source.emit(message, { text: 'hello' })
+```
+
+Use `linkChannel(...)` for bidirectional forwarding:
+
+```ts
+import { linkChannel } from '@moeru/eventa'
+
+const link = linkChannel(iframeContext, websocketContext)
+```
+
+`linkChannel(a, b, c)` creates a fully-connected bidirectional mesh. It is not a linear chain like `a <-> b <-> c`; every context is linked to every other context.
+
+Channels propagate context aborts by default. In a pipe, aborting the source aborts every target. In a link, aborting one context aborts the linked mesh. Set `propagateAbort: false` when contexts should share events but keep independent lifetimes:
+
+```ts
+linkChannel(iframeContext, websocketContext, {
+  propagateAbort: false,
+})
+```
+
+#### Transform and filter
+
+Channel plugins run before an event is forwarded. A plugin can:
+
+- return `undefined` to keep forwarding the current event
+- return a new event object to transform it
+- return `false` to drop it for that pipe
+
+Plugins receive the current event and a context object with `source`, `target`, and `direction`.
+
+```ts
+import { defineChannelPlugin, pipeChannel } from '@moeru/eventa'
+
+const tagSource = defineChannelPlugin(event => ({
+  ...event,
+  body: {
+    ...event.body,
+    source: 'iframe',
+  },
+}))
+
+const blockPrivateEvents = defineChannelPlugin((event) => {
+  if (event.id.startsWith('private:')) {
+    return false
+  }
+})
+
+pipeChannel(iframeContext, websocketContext, {
+  plugins: [tagSource, blockPrivateEvents],
+})
+```
+
+You can add plugins after creating a channel. Calling `.use(...)` on the returned group applies the plugin to every pipe in that group:
+
+```ts
+const pipe = pipeChannel(sourceContext, firstTarget, secondTarget)
+
+const removeTrace = pipe.use(event => ({
+  ...event,
+  metadata: {
+    ...event.metadata,
+    tracedAt: Date.now(),
+  },
+}))
+
+removeTrace()
+```
+
+The exposed `pipes` array contains the individual directed pipes. Plugins added to a child pipe only affect that edge:
+
+```ts
+const pipe = pipeChannel(sourceContext, firstTarget, secondTarget)
+
+pipe.pipes[0].use((event) => {
+  if (event.id === 'debug') {
+    return false
+  }
+})
+```
+
 ### Adapters
 
 Eventa comes with various adapters for common use scenarios across browsers and Node.js, including Electron, `window.postMessage`, Web Workers, Worker Threads, BroadcastChannel, EventTarget, EventEmitter, and WebSockets.

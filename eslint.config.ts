@@ -4,6 +4,7 @@ export default await antfu(
   {
     yaml: false,
     ignores: [
+      'docs/superpowers/**',
       'skills/eventa/SKILL.md',
     ],
     rules: {
