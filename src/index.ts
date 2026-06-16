@@ -1,3 +1,5 @@
+export type * from './channel'
+export * from './channel'
 export type * from './context'
 export * from './context'
 export type * from './eventa'

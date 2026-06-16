@@ -24,16 +24,23 @@ export function createContext<Extensions = any, Options = { raw?: any }>(props: 
 
   const hooks = props.adapter?.(emit).hooks
 
-  function emit<P>(event: Eventa<P>, payload: P, options?: Options) {
+  function emit<P>(event: Eventa<P>, payload: P, options?: Options): Promise<void> {
     const emittingPayload = { ...event, body: payload }
+    const pending: Array<Promise<void>> = []
+
+    function track(result: unknown | Promise<unknown>) {
+      if (typeof result === 'object' && result !== null && 'then' in result && typeof result.then === 'function') {
+        pending.push(result as unknown as Promise<void>)
+      }
+    }
 
     for (const listener of listeners.get(event.id) || []) {
-      listener(emittingPayload, options)
+      track(listener(emittingPayload, options))
       hooks?.onReceived?.(event.id, emittingPayload)
     }
 
     for (const onceListener of onceListeners.get(event.id) || []) {
-      onceListener(emittingPayload, options)
+      track(onceListener(emittingPayload, options))
       hooks?.onReceived?.(event.id, emittingPayload)
       onceListeners.get(event.id)?.delete(onceListener)
     }
@@ -46,11 +53,11 @@ export function createContext<Extensions = any, Options = { raw?: any }>(props: 
         }
 
         for (const listener of matchExpressionListeners.get(matchExpression.id) || []) {
-          listener(emittingPayload, options)
+          track(listener(emittingPayload, options))
           hooks?.onReceived?.(matchExpression.id, emittingPayload)
         }
         for (const onceListener of matchExpressionOnceListeners.get(matchExpression.id) || []) {
-          onceListener(emittingPayload, options)
+          track(onceListener(emittingPayload, options))
           hooks?.onReceived?.(matchExpression.id, emittingPayload)
           matchExpressionOnceListeners.get(matchExpression.id)?.delete(onceListener)
         }
@@ -58,6 +65,8 @@ export function createContext<Extensions = any, Options = { raw?: any }>(props: 
     }
 
     hooks?.onSent(event.id, emittingPayload, options)
+
+    return Promise.all(pending).then(() => void 0)
   }
 
   return {
@@ -71,7 +80,7 @@ export function createContext<Extensions = any, Options = { raw?: any }>(props: 
 
     emit,
 
-    on<P>(eventOrMatchExpression: Eventa<P> | EventaMatchExpression<P>, handler: (payload: Eventa<P>, options?: Options) => void): () => void {
+    on<P>(eventOrMatchExpression: Eventa<P> | EventaMatchExpression<P>, handler: (payload: Eventa<P>, options?: Options) => any): () => void {
       if (eventOrMatchExpression.type === EventaType.Event) {
         const event = eventOrMatchExpression as Eventa<P>
         if (!listeners.has(event.id)) {
@@ -100,7 +109,7 @@ export function createContext<Extensions = any, Options = { raw?: any }>(props: 
       return () => void 0
     },
 
-    once<P>(eventOrMatchExpression: Eventa<P> | EventaMatchExpression<P>, handler: (payload: Eventa<P>, options?: Options) => void): () => void {
+    once<P>(eventOrMatchExpression: Eventa<P> | EventaMatchExpression<P>, handler: (payload: Eventa<P>, options?: Options) => any): () => void {
       if (eventOrMatchExpression.type === EventaType.Event) {
         const event = eventOrMatchExpression as Eventa<P>
         if (!onceListeners.has(event.id)) {
@@ -129,7 +138,7 @@ export function createContext<Extensions = any, Options = { raw?: any }>(props: 
       return () => void 0
     },
 
-    off<P>(eventOrMatchExpression: Eventa<P> | EventaMatchExpression<P>, handler?: (payload: Eventa<P>, options?: Options) => void) {
+    off<P>(eventOrMatchExpression: Eventa<P> | EventaMatchExpression<P>, handler?: (payload: Eventa<P>, options?: Options) => any) {
       switch (eventOrMatchExpression.type) {
         case EventaType.Event:
           if (handler !== undefined) {
@@ -161,6 +170,7 @@ export function createContext<Extensions = any, Options = { raw?: any }>(props: 
       if (lifetimeController.signal.aborted) {
         return
       }
+
       lifetimeController.abort(reason)
     },
   }
@@ -170,10 +180,10 @@ export interface EventContext<Extensions = undefined, EmitOptions = undefined> {
   listeners: Map<EventTag<any, any>, Set<(params: any) => any>>
   onceListeners: Map<EventTag<any, any>, Set<(params: any) => any>>
 
-  emit: <P>(event: Eventa<P>, payload: P, options?: EmitOptions) => void
-  on: <P>(eventOrMatchExpression: Eventa<P> | EventaMatchExpression<P>, handler: (payload: Eventa<P>, options?: EmitOptions) => void) => () => void
-  once: <P>(eventOrMatchExpression: Eventa<P> | EventaMatchExpression<P>, handler: (payload: Eventa<P>, options?: EmitOptions) => void) => () => void
-  off: <P>(eventOrMatchExpression: Eventa<P> | EventaMatchExpression<P>, handler?: (payload: Eventa<P>, options?: EmitOptions) => void) => void
+  emit: <P>(event: Eventa<P>, payload: P, options?: EmitOptions) => Promise<void>
+  on: <P>(eventOrMatchExpression: Eventa<P> | EventaMatchExpression<P>, handler: (payload: Eventa<P>, options?: EmitOptions) => any) => () => void
+  once: <P>(eventOrMatchExpression: Eventa<P> | EventaMatchExpression<P>, handler: (payload: Eventa<P>, options?: EmitOptions) => any) => () => void
+  off: <P>(eventOrMatchExpression: Eventa<P> | EventaMatchExpression<P>, handler?: (payload: Eventa<P>, options?: EmitOptions) => any) => void
 
   /**
    * Lifetime signal for this context. Aborts when `abort()` is called by an
