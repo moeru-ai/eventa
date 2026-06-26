@@ -2,7 +2,7 @@
   "name": "@moeru/eventa",
   "type": "module",
   "version": "1.0.0-beta.11",
-  "packageManager": "pnpm@11.7.0",
+  "packageManager": "pnpm@11.9.0",
   "description": "Events are all you need",
   "author": {
     "name": "RainbowBird",
@@ -112,7 +112,7 @@
   "peerDependencies": {
     "electron": ">=39",
     "h3": ">=2.0.1-rc.22",
-    "hono": ">=4.12.25",
+    "hono": ">=4.12.27",
     "web-worker": "^1.5.0"
   },
   "peerDependenciesMeta": {
