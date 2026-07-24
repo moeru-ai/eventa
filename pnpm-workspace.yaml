@@ -13,7 +13,7 @@ catalog:
   '@vitest/browser-playwright': ^4.1.9
   '@vitest/coverage-v8': ^4.1.9
   '@vitest/web-worker': ^4.1.9
-  bumpp: ^11.1.0
+  bumpp: ^12.0.0
   crossws: ^0.4.6
   eslint: ^10.5.0
   hono: ^4.12.25
