@@ -8,6 +8,7 @@ catalog:
   '@antfu/eslint-config': ^9.0.0
   '@electron-toolkit/preload': ^3.0.2
   '@moeru/std': 0.1.0-beta.18
+  '@tauri-apps/api': ^2.11.1
   '@types/node': ^25.9.3
   '@types/picomatch': ^4.0.3
   '@vitest/browser-playwright': ^4.1.9

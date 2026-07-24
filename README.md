@@ -181,7 +181,7 @@ pipe.pipes[0].use((event) => {
 
 ### Adapters
 
-Eventa comes with various adapters for common use scenarios across browsers and Node.js, including Electron, `window.postMessage`, Web Workers, Worker Threads, BroadcastChannel, EventTarget, EventEmitter, and WebSockets.
+Eventa comes with various adapters for common use scenarios across browsers and Node.js, including Electron, Tauri, `window.postMessage`, Web Workers, Worker Threads, BroadcastChannel, EventTarget, EventEmitter, and WebSockets.
 
 <details>
   <summary>Electron</summary>
@@ -229,6 +229,52 @@ Eventa comes with various adapters for common use scenarios across browsers and 
      })
      ```
   4. The main and renderer contexts now share the invoke pipeline used throughout the examples in `src/adapters/electron/*.test.ts`.
+
+</details>
+
+<details>
+  <summary>Tauri</summary>
+
+  1. Define shared invoke events:
+      ```ts
+      import { defineInvokeEventa } from '@moeru/eventa'
+
+      export const greetEvents = defineInvokeEventa<{ message: string }, { name: string }>('tauri:greet')
+      ```
+
+  2. In the `main` webview, create a context targeting the `settings` webview:
+     ```ts
+     import { defineInvoke } from '@moeru/eventa'
+     import { createContext } from '@moeru/eventa/adapters/tauri'
+
+     import { greetEvents } from './shared-events'
+
+     const { context: mainCtx, dispose } = await createContext({
+       target: 'settings',
+     })
+
+     const greet = defineInvoke(mainCtx, greetEvents)
+     console.log(await greet({ name: 'Eventa' })) // => { message: 'Hello, Eventa' }
+
+     // Call this when the webview is torn down.
+     await dispose()
+     ```
+  3. In the `settings` webview, create the reverse context and register the handler:
+     ```ts
+     import { defineInvokeHandler } from '@moeru/eventa'
+     import { createContext } from '@moeru/eventa/adapters/tauri'
+
+     import { greetEvents } from './shared-events'
+
+     const { context: settingsCtx } = await createContext({
+       target: 'main',
+     })
+
+     defineInvokeHandler(settingsCtx, greetEvents, ({ name }) => ({
+       message: `Hello, ${name}`,
+     }))
+     ```
+  4. `createContext(...)` is asynchronous because Tauri registers event listeners asynchronously. Each context sends to one fixed target; create another context when a webview needs a different peer. If one webview connects to multiple peers, give each pair a distinct `messageEventName`. The adapter supports JSON-compatible events, invokes, cancellation, and streaming RPC for light traffic between JavaScript peers. It does not provide a Rust Eventa runtime or transferable payloads.
 
 </details>
 

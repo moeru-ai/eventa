@@ -15,6 +15,9 @@ catalogs:
     '@moeru/std':
       specifier: 0.1.0-beta.18
       version: 0.1.0-beta.18
+    '@tauri-apps/api':
+      specifier: ^2.11.1
+      version: 2.11.1
     '@types/node':
       specifier: ^25.9.3
       version: 25.9.3
@@ -102,6 +105,9 @@ importers:
       '@moeru/std':
         specifier: 'catalog:'
         version: 0.1.0-beta.18
+      '@tauri-apps/api':
+        specifier: 'catalog:'
+        version: 2.11.1
       '@types/node':
         specifier: 'catalog:'
         version: 25.9.3
@@ -923,6 +929,9 @@ packages:
   '@szmarczak/http-timer@4.0.6':
     resolution: {integrity: sha512-4BAffykYOgO+5nzBWYwE3W90sBgLJoUPRWWcL8wlyiM8IB8ipJz3UMJ9KXQd1RKQXpKp8Tutn80HZtWsu2u76w==}
     engines: {node: '>=10'}
+
+  '@tauri-apps/api@2.11.1':
+    resolution: {integrity: sha512-M2FPuYND2m+wh5hfW9ZpSdxMPdEJovPBWwoHJmwUpysTYNHaOkVFN419m/K0LIgjb/7KU2vBgsUepJWugQCvAA==}
 
   '@tybys/wasm-util@0.10.1':
     resolution: {integrity: sha512-9tTaPJLSiejZKx+Bmog4uSubteqTvFrVrURwkmHixBo0G4seD0zUxp98E1DzUBJxLQ3NPwXrGKDiVjwx/DpPsg==}
@@ -3389,6 +3398,8 @@ snapshots:
   '@szmarczak/http-timer@4.0.6':
     dependencies:
       defer-to-connect: 2.0.1
+
+  '@tauri-apps/api@2.11.1': {}
 
   '@tybys/wasm-util@0.10.1':
     dependencies:

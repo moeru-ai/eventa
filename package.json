@@ -31,6 +31,11 @@
       "import": "./dist/adapters/electron/renderer.mjs",
       "default": "./dist/adapters/electron/renderer.mjs"
     },
+    "./adapters/tauri": {
+      "type": "./dist/adapters/tauri/index.mts",
+      "import": "./dist/adapters/tauri/index.mjs",
+      "default": "./dist/adapters/tauri/index.mjs"
+    },
     "./adapters/event-emitter": {
       "type": "./dist/adapters/event-emitter/index.mts",
       "import": "./dist/adapters/event-emitter/index.mjs",
@@ -110,12 +115,16 @@
     "up": "taze -w -r -I -f && pnpm prune && pnpm dedupe"
   },
   "peerDependencies": {
+    "@tauri-apps/api": ">=2",
     "electron": ">=39",
     "h3": ">=2.0.1-rc.22",
     "hono": ">=4.12.25",
     "web-worker": "^1.5.0"
   },
   "peerDependenciesMeta": {
+    "@tauri-apps/api": {
+      "optional": true
+    },
     "electron": {
       "optional": true
     },
@@ -137,6 +146,7 @@
     "@antfu/eslint-config": "catalog:",
     "@electron-toolkit/preload": "catalog:",
     "@moeru/std": "catalog:",
+    "@tauri-apps/api": "catalog:",
     "@types/node": "catalog:",
     "@types/picomatch": "catalog:",
     "@vitest/browser-playwright": "catalog:",
