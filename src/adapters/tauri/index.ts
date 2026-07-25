@@ -47,6 +47,12 @@ export async function createContext(options: TauriAdapterOptions) {
     matchBy((event: DirectionalEventa<any>) => event._flowDirection === EventaFlowDirection.Outbound || !event._flowDirection),
     matchBy('*'),
   ), (event) => {
+    if (messageEventName === false) {
+      return
+    }
+
+    const data = generatePayload(event.id, { ...defineOutboundEventa(event.type), ...event })
+
     const sendOperation = sendQueue.then(async () => {
       if (disposed) {
         // dispose() already aborts the context and removes this listener. A
@@ -55,27 +61,18 @@ export async function createContext(options: TauriAdapterOptions) {
         // fire-and-forget their internal ctx.emit() calls.
         return
       }
-      if (messageEventName === false) {
-        return
-      }
-
-      const data = generatePayload(event.id, { ...defineOutboundEventa(event.type), ...event })
       await emitTo(options.target, messageEventName, data)
     })
 
     // Keep later sends usable if this operation fails. Ordinary Eventa events
-    // receive sendOperation directly; invoke events use the cancellation path
-    // below because Eventa intentionally does not await their internal emit.
+    // receive sendOperation directly; invoke events use context cancellation
+    // below because Eventa intentionally fire-and-forgets its async emits.
     sendQueue = sendOperation.catch(() => void 0)
 
     if (!isInvokeEventa(event)) {
       return sendOperation
     }
 
-    // Eventa's invoke implementation intentionally fire-and-forgets its
-    // internal ctx.emit() calls. Convert a failed invoke send into context
-    // cancellation so the pending invoke rejects instead of hanging while an
-    // ignored ctx.emit() promise becomes an unhandled rejection.
     return sendOperation.catch((error) => {
       const normalized = toError(error, 'eventa: Tauri invoke send failed')
       ctx.abort(normalized)

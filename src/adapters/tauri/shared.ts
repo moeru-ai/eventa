@@ -12,8 +12,8 @@ export interface Payload<T> {
 }
 
 /**
- * Emitted when a Tauri message cannot be parsed. A malformed message does not
- * abort the context because the underlying Tauri event transport is still
- * usable.
+ * Emitted when a Tauri message cannot be parsed or an invoke cannot be sent.
+ * A malformed message does not abort the context because the underlying Tauri
+ * event transport is still usable.
  */
 export const errorEvent = defineEventa<AdapterErrorPayload>('eventa:tauri:error')
