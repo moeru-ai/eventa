@@ -8,9 +8,10 @@ export type ProgressStatus = 'queued' | 'running' | 'completed' | 'failed' | 'ca
 /**
  * A transport-neutral progress update.
  *
- * `progress` is a normalized value between 0 and 1. Integrations can put
- * domain-specific information in `data` without making the transport aware
- * of the operation being performed.
+ * `progress` is a normalized value between 0 and 1 when the producer can
+ * measure it. Omitting `progress` means that the update is indeterminate.
+ * Integrations can put domain-specific information in `data` without making
+ * the transport aware of the operation being performed.
  */
 export interface ProgressUpdate<Stage extends string = string, Data = unknown> {
   type: 'progress'
@@ -18,6 +19,7 @@ export interface ProgressUpdate<Stage extends string = string, Data = unknown> {
   taskId?: string
   status: ProgressStatus
   stage?: Stage
+  /** Normalized completion value. Omit when the producer cannot measure progress. */
   progress?: number
   message?: string
   data?: Data

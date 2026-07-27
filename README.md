@@ -202,6 +202,22 @@ The progress contract deliberately does not define TTS, STT, or artistry
 stages. Each integration owns its `stage` and `data`; Eventa only transports
 the lifecycle update, cancellation, and stream completion.
 
+Numeric progress is optional. Providers that cannot report a meaningful
+percentage should omit `progress`; consumers can render an indeterminate
+state while still showing `status`, `stage`, and `message`:
+
+```ts
+yield createProgressUpdate('running', {
+  stage: 'transcribe',
+  message: 'Listening for speech',
+})
+```
+
+Lifecycle updates and streamed output are separate concerns. A transcript
+delta, audio chunk, image preview, or token should be carried in the stream's
+domain-specific `data` or output item; it should not be treated as a numeric
+percentage unless the producer can actually measure completion.
+
 The exposed `pipes` array contains the individual directed pipes. Plugins added to a child pipe only affect that edge:
 
 ```ts

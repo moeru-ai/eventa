@@ -27,4 +27,16 @@ describe('progress', () => {
     expect(() => createProgressUpdate('running', { progress: 1.1 })).toThrow(RangeError)
     expect(() => createProgressUpdate('running', { progress: Number.NaN })).toThrow(RangeError)
   })
+
+  it('supports indeterminate lifecycle updates', () => {
+    expect(createProgressUpdate('running', {
+      stage: 'transcribe',
+      message: 'Listening for speech',
+    })).toEqual({
+      type: 'progress',
+      status: 'running',
+      stage: 'transcribe',
+      message: 'Listening for speech',
+    })
+  })
 })
