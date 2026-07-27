@@ -167,56 +167,54 @@ const removeTrace = pipe.use(event => ({
 removeTrace()
 ```
 
-### Progress updates
+### Task notifications
 
 Long-running integrations such as TTS, STT, image generation, and artistry can
-share the same progress shape while keeping their payloads domain-specific.
-Use `createProgressUpdate` for lifecycle updates and include them in a stream
-invoke's response union:
+notify clients about lifecycle changes without coupling the transport to a
+progress-bar model. Use `createTaskUpdate` for state notifications and carry
+domain-specific output separately:
 
 ```ts
 import {
-  createProgressUpdate,
+  createTaskUpdate,
   defineInvokeEventa,
   defineStreamInvoke,
   defineStreamInvokeHandler,
 } from '@moeru/eventa'
 
 type SynthesisUpdate
-  = ReturnType<typeof createProgressUpdate<'synthesize', { samples: number }>>
-    | { type: 'result', audio: ArrayBuffer }
+  = ReturnType<typeof createTaskUpdate<'synthesize', { samples: number }>>
+    | { type: 'audio', audio: ArrayBuffer }
 
 const synthesize = defineInvokeEventa<SynthesisUpdate, { text: string }>('airi:tts')
 
 defineStreamInvokeHandler(ctx, synthesize, async function* ({ text }) {
-  yield createProgressUpdate('queued', { stage: 'synthesize' })
-  yield createProgressUpdate('running', { stage: 'synthesize', progress: 0.5, message: `Synthesizing ${text.length} characters` })
-  yield createProgressUpdate('completed', { stage: 'synthesize', progress: 1, data: { samples: 24_000 } })
-  yield { type: 'result', audio: new ArrayBuffer(0) }
+  const taskId = 'tts:turn-123'
+  yield createTaskUpdate(taskId, 'queued', { stage: 'synthesize' })
+  yield createTaskUpdate(taskId, 'running', { stage: 'synthesize' })
+  yield createTaskUpdate(taskId, 'completed', { stage: 'synthesize', data: { samples: 24_000 } })
+  yield { type: 'audio', audio: new ArrayBuffer(0) }
 })
 
 const updates = defineStreamInvoke(ctx, synthesize)
 ```
 
-The progress contract deliberately does not define TTS, STT, or artistry
-stages. Each integration owns its `stage` and `data`; Eventa only transports
-the lifecycle update, cancellation, and stream completion.
-
-Numeric progress is optional. Providers that cannot report a meaningful
-percentage should omit `progress`; consumers can render an indeterminate
-state while still showing `status`, `stage`, and `message`:
+Eventa does not validate the state machine or prescribe a UI. Each integration
+owns its transition rules, `stage`, `data`, and `error` shapes; Eventa only
+transports typed notifications. Use `parentTaskId` to associate child work
+with a larger operation:
 
 ```ts
-yield createProgressUpdate('running', {
-  stage: 'transcribe',
-  message: 'Listening for speech',
+yield createTaskUpdate('turn-123:image', 'running', {
+  parentTaskId: 'turn-123',
+  stage: 'sampling',
 })
 ```
 
-Lifecycle updates and streamed output are separate concerns. A transcript
-delta, audio chunk, image preview, or token should be carried in the stream's
-domain-specific `data` or output item; it should not be treated as a numeric
-percentage unless the producer can actually measure completion.
+Lifecycle notifications and streamed output are separate concerns. A
+transcript delta, audio chunk, image preview, or token should be carried in a
+domain-specific output item or `data` payload. Consumers may render stages,
+spinners, previews, or percentages according to their own product needs.
 
 The exposed `pipes` array contains the individual directed pipes. Plugins added to a child pipe only affect that edge:
 
