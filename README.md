@@ -167,6 +167,41 @@ const removeTrace = pipe.use(event => ({
 removeTrace()
 ```
 
+### Progress updates
+
+Long-running integrations such as TTS, STT, image generation, and artistry can
+share the same progress shape while keeping their payloads domain-specific.
+Use `createProgressUpdate` for lifecycle updates and include them in a stream
+invoke's response union:
+
+```ts
+import {
+  createProgressUpdate,
+  defineInvokeEventa,
+  defineStreamInvoke,
+  defineStreamInvokeHandler,
+} from '@moeru/eventa'
+
+type SynthesisUpdate
+  = ReturnType<typeof createProgressUpdate<'synthesize', { samples: number }>>
+    | { type: 'result', audio: ArrayBuffer }
+
+const synthesize = defineInvokeEventa<SynthesisUpdate, { text: string }>('airi:tts')
+
+defineStreamInvokeHandler(ctx, synthesize, async function* ({ text }) {
+  yield createProgressUpdate('queued', { stage: 'synthesize' })
+  yield createProgressUpdate('running', { stage: 'synthesize', progress: 0.5, message: `Synthesizing ${text.length} characters` })
+  yield createProgressUpdate('completed', { stage: 'synthesize', progress: 1, data: { samples: 24_000 } })
+  yield { type: 'result', audio: new ArrayBuffer(0) }
+})
+
+const updates = defineStreamInvoke(ctx, synthesize)
+```
+
+The progress contract deliberately does not define TTS, STT, or artistry
+stages. Each integration owns its `stage` and `data`; Eventa only transports
+the lifecycle update, cancellation, and stream completion.
+
 The exposed `pipes` array contains the individual directed pipes. Plugins added to a child pipe only affect that edge:
 
 ```ts
