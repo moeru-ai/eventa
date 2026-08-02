@@ -1,4 +1,4 @@
-import type { EventTarget, Event as TauriEvent, UnlistenFn } from '@tauri-apps/api/event'
+import type { EventTarget, Event as TauriEvent } from '@tauri-apps/api/event'
 
 import type { EventContext } from '../../context'
 import type { DirectionalEventa, Eventa } from '../../eventa'
@@ -25,7 +25,7 @@ export interface TauriAdapterOptions {
    */
   listenTarget?: TauriTarget
   /** Use the same name on both peers and a distinct name for each peer pair. @default "eventa-message" */
-  messageEventName?: string | false
+  messageEventName?: string
 }
 
 export interface TauriEmitOptions {
@@ -39,7 +39,6 @@ export async function createContext(options: TauriAdapterOptions) {
   const messageEventName = options.messageEventName ?? 'eventa-message'
 
   let disposed = false
-  let unlisten: UnlistenFn | undefined
   let disposePromise: Promise<void> | undefined
   let sendQueue = Promise.resolve()
 
@@ -47,10 +46,6 @@ export async function createContext(options: TauriAdapterOptions) {
     matchBy((event: DirectionalEventa<any>) => event._flowDirection === EventaFlowDirection.Outbound || !event._flowDirection),
     matchBy('*'),
   ), (event) => {
-    if (messageEventName === false) {
-      return
-    }
-
     const data = generatePayload(event.id, { ...defineOutboundEventa(event.type), ...event })
 
     const sendOperation = sendQueue.then(async () => {
@@ -73,52 +68,38 @@ export async function createContext(options: TauriAdapterOptions) {
       return sendOperation
     }
 
-    return sendOperation.catch((error) => {
-      const normalized = toError(error, 'eventa: Tauri invoke send failed')
-      ctx.abort(normalized)
+    return sendOperation.catch((cause) => {
+      const error = toError(cause, 'eventa: Tauri invoke send failed')
+      ctx.abort(error)
       void ctx.emit(
         defineInboundEventa(errorEvent.id),
-        { kind: 'fatal', error: normalized },
+        { kind: 'fatal', error },
       ).catch(dispatchError => console.error('Failed to dispatch Tauri adapter error:', dispatchError))
     })
   })
 
-  function emitParseError(error: unknown, event: TauriEvent<unknown>) {
-    void ctx.emit(
-      defineInboundEventa(errorEvent.id),
-      { kind: 'parse', error: toError(error, 'eventa: Tauri message parse error') },
-      { raw: { event } },
-    ).catch(dispatchError => console.error('Failed to dispatch Tauri adapter error:', dispatchError))
-  }
+  const listenTarget = options.listenTarget ?? getCurrentWebview().label
 
-  try {
-    if (messageEventName !== false) {
-      const listenTarget = options.listenTarget ?? getCurrentWebview().label
+  const unlisten = await listen<Payload<Eventa<any>>>(messageEventName, (event) => {
+    try {
+      const { type, payload } = parsePayload<Eventa<any>>(event.payload)
+      const inboundEvent = {
+        ...payload,
+        ...defineInboundEventa(type),
+      }
 
-      unlisten = await listen<Payload<Eventa<any>>>(messageEventName, (event) => {
-        try {
-          const { type, payload } = parsePayload<Eventa<any>>(event.payload)
-          const inboundEvent = {
-            ...payload,
-            ...defineInboundEventa(type),
-          }
-
-          void ctx.emit(inboundEvent, payload.body, { raw: { event } })
-            .catch(error => console.error('Failed to dispatch Tauri message:', error))
-        }
-        catch (error) {
-          console.error('Failed to parse Tauri message:', error)
-          emitParseError(error, event)
-        }
-      }, { target: listenTarget })
+      void ctx.emit(inboundEvent, payload.body, { raw: { event } })
+        .catch(error => console.error('Failed to dispatch Tauri message:', error))
     }
-  }
-  catch (error) {
-    disposed = true
-    removeOutbound()
-    ctx.abort(error)
-    throw error
-  }
+    catch (error) {
+      console.error('Failed to parse Tauri message:', error)
+      void ctx.emit(
+        defineInboundEventa(errorEvent.id),
+        { kind: 'parse', error: toError(error, 'eventa: Tauri message parse error') },
+        { raw: { event } },
+      ).catch(dispatchError => console.error('Failed to dispatch Tauri adapter error:', dispatchError))
+    }
+  }, { target: listenTarget })
 
   return {
     context: ctx,

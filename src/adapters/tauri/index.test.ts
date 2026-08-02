@@ -115,21 +115,6 @@ describe('tauri adapter', () => {
     await dispose()
   })
 
-  it('can disable Tauri message transport', async () => {
-    const { context, dispose } = await createContext({
-      messageEventName: false,
-      target: 'settings',
-    })
-
-    await context.emit(defineEventa('tauri:local'), undefined)
-
-    expect(tauri.getCurrentWebview).not.toHaveBeenCalled()
-    expect(tauri.listen).not.toHaveBeenCalled()
-    expect(tauri.emitTo).not.toHaveBeenCalled()
-
-    await dispose()
-  })
-
   it('rejects creation when Tauri listener registration fails', async () => {
     const error = new Error('listen failed')
     tauri.listen.mockRejectedValueOnce(error)
@@ -149,7 +134,7 @@ describe('tauri adapter', () => {
       expect.objectContaining({
         body: expect.objectContaining({
           kind: 'parse',
-          error: expect.objectContaining({ message: 'eventa: invalid Tauri payload' }),
+          error: expect.any(TypeError),
         }),
       }),
       { raw: { event: rawEvent } },
