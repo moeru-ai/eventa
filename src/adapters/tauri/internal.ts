@@ -12,6 +12,5 @@ export function generatePayload<T>(type: EventTag<any, any>, payload: T): Payloa
 }
 
 export function parsePayload<T>(data: unknown): Payload<T> {
-
   return data as Payload<T>
 }
