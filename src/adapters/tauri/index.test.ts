@@ -36,7 +36,7 @@ describe('tauri adapter', () => {
     tauri.emitTo.mockReset().mockResolvedValue(undefined)
     tauri.getCurrentWebview.mockReset().mockReturnValue({ label: 'main' })
     tauri.listen.mockReset().mockResolvedValue(tauri.unlisten)
-    tauri.unlisten.mockReset()
+    tauri.unlisten.mockReset().mockResolvedValue(undefined)
   })
 
   it('sends and receives Eventa messages', async () => {
@@ -145,7 +145,7 @@ describe('tauri adapter', () => {
     await dispose()
   })
 
-  it('keeps sends ordered and recovers after a failure', async () => {
+  it('does not serialize ordinary event sends', async () => {
     const error = new Error('emitTo failed')
     let rejectFirst!: (error: Error) => void
     tauri.emitTo
@@ -155,19 +155,17 @@ describe('tauri adapter', () => {
       .mockResolvedValueOnce(undefined)
 
     const { context, dispose } = await createContext({ target: 'settings' })
-    const event = defineEventa<number>('tauri:ordered')
+    const event = defineEventa<number>('tauri:unordered')
     const first = context.emit(event, 1)
     const firstResult = expect(first).rejects.toBe(error)
     const second = context.emit(event, 2)
 
-    await Promise.resolve()
-    expect(tauri.emitTo).toHaveBeenCalledTimes(1)
+    expect(tauri.emitTo).toHaveBeenCalledTimes(2)
+    expect(tauri.emitTo.mock.calls[1][2].payload.body).toBe(2)
 
     rejectFirst(error)
     await firstResult
     await expect(second).resolves.toBeUndefined()
-    expect(tauri.emitTo).toHaveBeenCalledTimes(2)
-    expect(tauri.emitTo.mock.calls[1][2].payload.body).toBe(2)
 
     await dispose()
   })
@@ -191,24 +189,16 @@ describe('tauri adapter', () => {
     await dispose()
   })
 
-  it('disposes once and stops queued sends', async () => {
-    let finishSend!: () => void
-    tauri.emitTo.mockImplementationOnce(() => new Promise<void>((resolve) => {
-      finishSend = resolve
-    }))
-
+  it('disposes once and stops future sends', async () => {
     const { context, dispose } = await createContext({ target: 'settings' })
     const reason = new Error('disposed')
     const event = defineEventa<number>('tauri:dispose')
-    const sending = context.emit(event, 1)
-    const queued = context.emit(event, 2)
-
-    await Promise.resolve()
+    await context.emit(event, 1)
 
     const firstDispose = dispose(reason)
     expect(dispose()).toBe(firstDispose)
-    finishSend()
-    await Promise.all([sending, queued, firstDispose])
+    await firstDispose
+    await context.emit(event, 2)
 
     expect(context.signal.aborted).toBe(true)
     expect(context.signal.reason).toBe(reason)

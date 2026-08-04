@@ -274,7 +274,7 @@ Eventa comes with various adapters for common use scenarios across browsers and 
        message: `Hello, ${name}`,
      }))
      ```
-  4. `createContext(...)` is asynchronous because Tauri registers event listeners asynchronously. Each context sends to one fixed target; create another context when a webview needs a different peer. If one webview connects to multiple peers, give each pair a distinct `messageEventName`. The adapter supports JSON-compatible events, invokes, cancellation, and streaming RPC for light traffic between JavaScript peers. It does not provide a Rust Eventa runtime or transferable payloads.
+  4. `createContext(...)` is asynchronous because Tauri registers event listeners asynchronously. Each context sends to one fixed target; use a separate context for each peer. When multiple peer contexts share a webview, give each pair a distinct `messageEventName`. The adapter supports JSON-compatible events, unary invokes, and cancellation for lightweight messaging between JavaScript peers. It forwards messages directly without sequencing; consumers that require ordered delivery must handle sequencing themselves. It does not provide a Rust Eventa runtime, transferable payloads, or streaming RPC.
 
 </details>
 

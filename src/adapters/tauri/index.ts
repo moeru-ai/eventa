@@ -38,9 +38,7 @@ export async function createContext(options: TauriAdapterOptions) {
   const ctx = createBaseContext() as EventContext<any, TauriEmitOptions>
   const messageEventName = options.messageEventName ?? 'eventa-message'
 
-  let disposed = false
   let disposePromise: Promise<void> | undefined
-  let sendQueue = Promise.resolve()
 
   const removeOutbound = ctx.on(and(
     matchBy((event: DirectionalEventa<any>) => event._flowDirection === EventaFlowDirection.Outbound || !event._flowDirection),
@@ -48,21 +46,7 @@ export async function createContext(options: TauriAdapterOptions) {
   ), (event) => {
     const data = generatePayload(event.id, { ...defineOutboundEventa(event.type), ...event })
 
-    const sendOperation = sendQueue.then(async () => {
-      if (disposed) {
-        // dispose() already aborts the context and removes this listener. A
-        // send queued just before disposal is simply dropped; rejecting here
-        // would become unhandled in Eventa invoke paths that intentionally
-        // fire-and-forget their internal ctx.emit() calls.
-        return
-      }
-      await emitTo(options.target, messageEventName, data)
-    })
-
-    // Keep later sends usable if this operation fails. Ordinary Eventa events
-    // receive sendOperation directly; invoke events use context cancellation
-    // below because Eventa intentionally fire-and-forgets its async emits.
-    sendQueue = sendOperation.catch(() => void 0)
+    const sendOperation = emitTo(options.target, messageEventName, data)
 
     if (!isInvokeEventa(event)) {
       return sendOperation
@@ -83,12 +67,7 @@ export async function createContext(options: TauriAdapterOptions) {
   const unlisten = await listen<Payload<Eventa<any>>>(messageEventName, (event) => {
     try {
       const { type, payload } = parsePayload<Eventa<any>>(event.payload)
-      const inboundEvent = {
-        ...payload,
-        ...defineInboundEventa(type),
-      }
-
-      void ctx.emit(inboundEvent, payload.body, { raw: { event } })
+      void ctx.emit(defineInboundEventa(type), payload.body, { raw: { event } })
         .catch(error => console.error('Failed to dispatch Tauri message:', error))
     }
     catch (error) {
@@ -108,13 +87,10 @@ export async function createContext(options: TauriAdapterOptions) {
         return disposePromise
       }
 
-      disposed = true
       ctx.abort(reason ?? new Error('eventa: invoke cancelled, Tauri adapter disposed'))
       removeOutbound()
 
-      disposePromise = Promise.resolve()
-        .then(() => unlisten?.())
-        .then(() => void 0)
+      disposePromise = Promise.resolve().then(() => unlisten())
 
       return disposePromise
     },
