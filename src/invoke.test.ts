@@ -3,6 +3,7 @@ import type { InvokeFunction } from './invoke'
 import { sleep } from '@moeru/std/sleep'
 import { describe, expect, expectTypeOf, it, vi } from 'vitest'
 
+import { pipeChannel } from './channel'
 import { createContext } from './context'
 import { defineInvoke, defineInvokeHandler, defineInvokeHandlers, defineInvokes, undefineInvokeHandler } from './invoke'
 import { defineInvokeEventa } from './invoke-shared'
@@ -160,6 +161,34 @@ describe('invoke', () => {
     invoke()
     expect(handler).toHaveBeenCalledTimes(2)
     expect(weakHandler).toHaveBeenCalledTimes(1)
+  })
+
+  it('can register the same handler again after its disposer runs', async () => {
+    const ctx = createContext()
+    const events = defineInvokeEventa<string, string>('invoke:reregister-handler')
+    const handler = vi.fn((value: string) => value.toUpperCase())
+
+    const off = defineInvokeHandler(ctx, events, handler)
+    off()
+    defineInvokeHandler(ctx, events, handler)
+
+    await expect(defineInvoke(ctx, events)('hello')).resolves.toBe('HELLO')
+    expect(handler).toHaveBeenCalledOnce()
+  })
+
+  it('does not let a stale duplicate disposer remove a later registration', async () => {
+    const ctx = createContext()
+    const events = defineInvokeEventa<string, string>('invoke:stale-disposer')
+    const handler = vi.fn((value: string) => value.toUpperCase())
+
+    const firstOff = defineInvokeHandler(ctx, events, handler)
+    const staleOff = defineInvokeHandler(ctx, events, handler)
+    firstOff()
+    defineInvokeHandler(ctx, events, handler)
+    staleOff()
+
+    await expect(defineInvoke(ctx, events)('hello')).resolves.toBe('HELLO')
+    expect(undefineInvokeHandler(ctx, events, handler)).toBe(true)
   })
 
   it('should remove invoke specific handler via undefineInvokeHandler', () => {
@@ -325,6 +354,92 @@ describe('invoke', () => {
     expect(received.length).toBe(4)
     expect(elapsed).toBeGreaterThanOrEqual(writeIntervalMs * 4)
     expect(elapsed).toBeLessThan(writeIntervalMs * 5)
+  })
+
+  // ROOT CAUSE:
+  //
+  // The caller previously ignored the Promise returned by the request emit.
+  // An asynchronous edge failure therefore became an unhandled rejection while
+  // the invoke Promise waited forever for a response that could never arrive.
+  //
+  // The caller now rejects from its own request send failure.
+  it('rejects when a unary request cannot cross an asynchronous edge', async () => {
+    const caller = createContext()
+    const handler = createContext()
+    const events = defineInvokeEventa<string, string>('invoke:request-send-failure')
+    const failure = new Error('request blocked')
+    const pipe = pipeChannel(caller, handler, {
+      plugins: async () => {
+        throw failure
+      },
+    })
+
+    await expect(defineInvoke(caller, events)('hello')).rejects.toBe(failure)
+    pipe.dispose()
+  })
+
+  it('rejects when a request-stream frame cannot cross an asynchronous edge', async () => {
+    const caller = createContext()
+    const handler = createContext()
+    const events = defineInvokeEventa<number, ReadableStream<number>>('invoke:request-stream-send-failure')
+    const failure = new Error('request chunk blocked')
+    const pipe = pipeChannel(caller, handler, {
+      plugins: async (event) => {
+        if (event.id === events.sendEvent.id) {
+          throw failure
+        }
+      },
+    })
+    const request = new ReadableStream<number>({
+      start(controller) {
+        controller.enqueue(1)
+        controller.close()
+      },
+    })
+
+    await expect(defineInvoke(caller, events)(request)).rejects.toBe(failure)
+    pipe.dispose()
+  })
+
+  // ROOT CAUSE:
+  //
+  // Request producers previously mapped iterator failures to sendEventAbort.
+  // That made handler-side consumers observe cancellation instead of the
+  // request error defined by the invoke protocol.
+  //
+  // The producer now sends the ordered sendEventError frame, and the handler
+  // errors the reconstructed request stream with that exact value.
+  it('routes a request-source error to the unary handler request stream', async () => {
+    const ctx = createContext()
+    const events = defineInvokeEventa<number, AsyncIterable<number>, Error, Error>('invoke:request-source-error')
+    const failure = new Error('request source failed')
+    let handlerError: unknown
+    let settleHandler!: () => void
+    const handlerSettled = new Promise<void>((resolve) => {
+      settleHandler = resolve
+    })
+    defineInvokeHandler(ctx, events, async (request) => {
+      try {
+        for await (const _value of request) {
+          // Consume until the request producer reports its source error.
+        }
+      }
+      catch (error) {
+        handlerError = error
+      }
+      finally {
+        settleHandler()
+      }
+      return 0
+    })
+    const request = (async function* () {
+      yield 1
+      throw failure
+    }())
+
+    await expect(defineInvoke(ctx, events)(request)).rejects.toBe(failure)
+    await handlerSettled
+    expect(handlerError).toBe(failure)
   })
 })
 

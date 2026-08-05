@@ -152,6 +152,38 @@ defineInvokeHandler(ctx, event, async ({ input }, options) => {
 })
 ```
 
+### Multi-hop Channels
+
+Channels form ordered routing chains. They carry events, unary invokes, every
+stream frame, and invocation cancellation through intermediate contexts.
+
+```ts
+import { linkChannel, pipeChannel } from '@moeru/eventa'
+
+pipeChannel(a, b, c) // a -> b -> c
+linkChannel(a, b, c) // a <-> b <-> c
+```
+
+There is no direct `a` to `c` edge. Use multiple explicit pipes for fan-out.
+Disposing a channel removes its edges only; context abort never cascades across
+a link. One connected graph must have one effective handler for each invoke
+definition.
+
+Each local emit creates an `EventaInner` whose `deliveryId` survives channel
+hops and transport serialization. Contexts suppress recently seen delivery IDs
+and stop forwarding when `hopsRemaining` reaches zero. Plugins may inspect the
+read-only inner value and transform or drop its Eventa, but may not replace routing
+identity or hop state.
+
+For iframe-to-server routing, connect the EventTarget-side context to the
+plugin's BroadcastChannel context, then connect the gateway's BroadcastChannel
+context to its WebSocket context. The adapters carry the inner value across the
+runtime boundaries; no directional forwarding markers are needed.
+
+Contexts do not serialize concurrent `emit()` calls. Request and response
+stream pumps await each frame only to preserve per-invocation stream order;
+cancellation is routed independently and may arrive before request frames.
+
 ### Bulk Registration (Shorthands)
 
 ```ts
@@ -214,7 +246,7 @@ const result = await invokeReaddir({ path: '/usr' })
 
 ## Advanced Features
 
-- **Directional events**: `defineInboundEventa<T>()` and `defineOutboundEventa<T>()` for flow control
+- **Delivery routing**: `EventaInner<T>` preserves delivery identity and hop budget across channels and adapters
 - **Match expressions**: `matchBy(glob)`, `matchBy(regex)`, `and(...)`, `or(...)` for event filtering
 - **WebSocket lifecycle**: `wsConnectedEvent` and `wsDisconnectedEvent` from the native adapter
 

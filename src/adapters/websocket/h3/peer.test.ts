@@ -1,4 +1,4 @@
-import type { Hooks, Message } from 'crossws'
+import type { Hooks } from 'crossws'
 
 import { plugin as ws } from 'crossws/server'
 import { defineWebSocketHandler, H3, serve } from 'h3'
@@ -54,7 +54,7 @@ describe('h3 websocket adapter', { timeout: 2000 }, async () => {
         untilHelloEventTriggered1.handler()
       })
 
-      clientConnContext.emit(helloEvent, { result: 'Hello' }, { raw: { message: {} as Message } })
+      clientConnContext.emit(helloEvent, { result: 'Hello' })
       await untilHelloEventTriggered1.promise
 
       expect(handleHello).toHaveBeenCalledTimes(1)

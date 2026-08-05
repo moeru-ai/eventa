@@ -110,6 +110,80 @@ describe('eventContext', () => {
     expect(weakHandler).toHaveBeenCalledTimes(1)
   })
 
+  it('does not serialize concurrent emits', async () => {
+    const ctx = createContext()
+    const event = defineEventa<number>('test:unordered-emits')
+    let releaseFirst!: () => void
+    const firstGate = new Promise<void>((resolve) => {
+      releaseFirst = resolve
+    })
+    const completed: number[] = []
+    ctx.on(event, async ({ body }) => {
+      if (body === 1) {
+        await firstGate
+      }
+      completed.push(body!)
+    })
+
+    const first = ctx.emit(event, 1)
+    const second = ctx.emit(event, 2)
+    await second
+
+    expect(completed).toEqual([2])
+    releaseFirst()
+    await first
+    expect(completed).toEqual([2, 1])
+  })
+
+  it('dispatches a zero-hop local emit and reports exhaustion without routing an event', async () => {
+    const onDiagnostic = vi.fn()
+    const ctx = createContext({ routing: { initialHops: 0, onDiagnostic } })
+    const event = defineEventa<string>('test:hops-exhausted')
+    const handler = vi.fn()
+
+    ctx.on(event, handler)
+    await ctx.emit(event, 'hello')
+
+    expect(handler).toHaveBeenCalledOnce()
+    expect(onDiagnostic).toHaveBeenCalledOnce()
+    expect(onDiagnostic).toHaveBeenCalledWith({
+      kind: 'hops-exhausted',
+      inner: expect.objectContaining({
+        deliveryId: expect.any(String),
+        hopsRemaining: 0,
+        eventa: expect.objectContaining({ id: event.id, body: 'hello' }),
+      }),
+    })
+  })
+
+  it('rejects routing settings that cannot bound delivery forwarding', () => {
+    expect(() => createContext({ routing: { recentDeliveryLimit: 0 } })).toThrow(RangeError)
+    expect(() => createContext({ routing: { recentDeliveryTtl: 0 } })).toThrow(RangeError)
+    expect(() => createContext({ routing: { initialHops: -1 } })).toThrow(RangeError)
+  })
+
+  it('returns a rejected promise when a routing diagnostic throws', async () => {
+    const failure = new Error('diagnostic failed')
+    const ctx = createContext({
+      routing: {
+        initialHops: 0,
+        onDiagnostic: () => {
+          throw failure
+        },
+      },
+    })
+    const event = defineEventa('test:diagnostic-error')
+    const handler = vi.fn()
+    ctx.on(event, handler)
+    let emitted: Promise<void> | undefined
+
+    expect(() => {
+      emitted = ctx.emit(event, undefined)
+    }).not.toThrow()
+    await expect(emitted).rejects.toBe(failure)
+    expect(handler).toHaveBeenCalledOnce()
+  })
+
   describe('lifetime signal / abort', () => {
     it('exposes an unaborted AbortSignal on a fresh context', () => {
       const ctx = createContext()

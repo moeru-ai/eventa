@@ -7,30 +7,47 @@ import { defineWebSocketHandler, H3, serve } from 'h3'
 import { describe, expect, it, vi } from 'vitest'
 
 import { createContext, wsConnectedEvent, wsDisconnectedEvent, wsErrorEvent } from '.'
-import { defineEventa, nanoid } from '../../../eventa'
+import { defineEventa } from '../../../eventa'
 import { defineInvoke } from '../../../invoke'
 import { defineInvokeEventa } from '../../../invoke-shared'
 import { createUntil, randomBetween } from '../../../utils'
 
 describe('browser websocket adapter', () => {
+  it('stops sending before publishing a close event', () => {
+    const send = vi.fn()
+    const wsConn = {
+      send,
+      url: 'ws://eventa.test',
+    } as unknown as WebSocket
+    const { context } = createContext(wsConn)
+    const onDisconnect = vi.fn()
+    context.on(wsDisconnectedEvent, onDisconnect)
+
+    wsConn.onclose?.({} as CloseEvent)
+
+    expect(send).not.toHaveBeenCalled()
+    expect(onDisconnect).toHaveBeenCalledOnce()
+    expect(context.signal.aborted).toBe(true)
+  })
+
   it('should create a ws adapter and handle events from peer send', async (testCtx) => {
     const sendEvent = defineEventa<string>('send')
     const receivedEvent = defineEventa<string>('received')
 
     const port = randomBetween(40000, 50000)
     const app = new H3()
+    let deliverySequence = 0
     app.get('/ws', defineWebSocketHandler({
       message: (peer) => {
+        deliverySequence += 1
         peer.send(JSON.stringify({
-          id: nanoid(),
-          type: receivedEvent.id,
-          payload: {
+          deliveryId: `native-websocket-inbound-delivery-${deliverySequence}`,
+          hopsRemaining: 32,
+          eventa: {
             id: receivedEvent.id,
             type: receivedEvent.type,
             body: 'world',
-          } satisfies Eventa<string>,
-          timestamp: Date.now(),
-          websocketType: 'outbound',
+          },
         }))
       },
     }))

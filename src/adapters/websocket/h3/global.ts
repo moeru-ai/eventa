@@ -1,28 +1,37 @@
 import type { Hooks, Message, Peer, WSError } from 'crossws'
 
-import type { EventContext } from '../../../context'
-import type { DirectionalEventa, Eventa } from '../../../eventa'
+import type { CreateContextOptions, EventContext } from '../../../context'
 
 import { createContext as createBaseContext } from '../../../context'
-import { and, defineEventa, defineInboundEventa, defineOutboundEventa, EventaFlowDirection, matchBy } from '../../../eventa'
-import { generateWebsocketPayload, parseWebsocketPayload } from '../internal'
+import { and, defineEventa, EventaFlowDirection, matchBy } from '../../../eventa'
+import { createOutboundInner, restoreInner } from '../../internal'
 
 export const wsConnectedEvent = defineEventa<{ id: string }>('eventa:adapters:websocket-global:connected')
 export const wsDisconnectedEvent = defineEventa<{ id: string }>('eventa:adapters:websocket-global:disconnected')
 export const wsErrorEvent = defineEventa<{ error: unknown }>('eventa:adapters:websocket-global:error')
 
-export function createGlobalContext(): {
-  websocketHandlers: Omit<Hooks, 'upgrade'>
-  context: EventContext<any, { raw: { error?: WSError, message?: Message } }>
-} {
-  const ctx = createBaseContext<any, { raw: { error?: WSError, message?: Message } }>()
-  const peers = new Set<Peer>()
+/** Creates one Eventa Context shared by all connected H3 WebSocket peers. */
+export interface H3GlobalAdapterOptions {
+  /** Delivery deduplication and hop policy for the created Context. */
+  context?: CreateContextOptions
+}
 
+export function createGlobalContext(options?: H3GlobalAdapterOptions): {
+  websocketHandlers: Omit<Hooks, 'upgrade'>
+  context: EventContext<undefined, { raw: { error?: WSError, message?: Message } }>
+} {
+  interface EmitOptions { raw: { error?: WSError, message?: Message } }
+  const ctx = createBaseContext<undefined, EmitOptions>(options?.context)
+  const peers = new Set<Peer>()
   ctx.on(and(
-    matchBy((e: DirectionalEventa<any>) => e._flowDirection === EventaFlowDirection.Outbound || !e._flowDirection),
+    matchBy(event => !('_flowDirection' in event) || !event._flowDirection || event._flowDirection === EventaFlowDirection.Outbound),
     matchBy('*'),
   ), (event) => {
-    const data = JSON.stringify(generateWebsocketPayload(event.id, { ...defineOutboundEventa(event.type), ...event }))
+    const inner = createOutboundInner(event)
+    if (!inner) {
+      return
+    }
+    const data = JSON.stringify(inner)
     for (const peer of peers) {
       peer.send(data)
     }
@@ -32,27 +41,24 @@ export function createGlobalContext(): {
     websocketHandlers: {
       open(peer) {
         peers.add(peer)
-        ctx.emit(wsConnectedEvent, { id: peer.id }, { raw: { } })
+        void ctx.emit(wsConnectedEvent, { id: peer.id }, { raw: {} }).catch(emitError => console.error('Failed to emit WebSocket open event:', emitError))
       },
-
       close(peer) {
         peers.delete(peer)
-        ctx.emit(wsDisconnectedEvent, { id: peer.id }, { raw: { } })
+        void ctx.emit(wsDisconnectedEvent, { id: peer.id }, { raw: {} }).catch(emitError => console.error('Failed to emit WebSocket close event:', emitError))
       },
-
       error(_, error) {
         console.error('WebSocket error:', error)
-        ctx.emit(wsErrorEvent, { error }, { raw: { error } })
+        void ctx.emit(wsErrorEvent, { error }, { raw: { error } }).catch(emitError => console.error('Failed to emit WebSocket error:', emitError))
       },
-
-      async message(_, message) {
+      message(_, message) {
         try {
-          const { type, payload } = parseWebsocketPayload<Eventa<any>>(message.text())
-          ctx.emit(defineInboundEventa(type), payload.body, { raw: { message } })
+          const inner = restoreInner(JSON.parse(message.text()))
+          void ctx.emit(inner.eventa, inner.eventa.body, { raw: { message } }).catch(emitError => console.error('Failed to emit WebSocket message:', emitError))
         }
         catch (error) {
           console.error('Failed to parse WebSocket message:', error)
-          ctx.emit(wsErrorEvent, { error }, { raw: { message } })
+          void ctx.emit(wsErrorEvent, { error }, { raw: { message } }).catch(emitError => console.error('Failed to emit WebSocket parse error:', emitError))
         }
       },
     },

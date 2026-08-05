@@ -6,7 +6,7 @@ import { plugin as ws } from 'crossws/server'
 import { defineWebSocketHandler, H3, serve } from 'h3'
 import { describe, expect, it, vi } from 'vitest'
 
-import { defineEventa, nanoid } from '../../../eventa'
+import { defineEventa } from '../../../eventa'
 import { createUntil, randomBetween } from '../../../utils'
 import { createGlobalContext, wsConnectedEvent, wsDisconnectedEvent, wsErrorEvent } from './global'
 
@@ -50,14 +50,13 @@ describe('h3 websocket adapter', { timeout: 2000 }, async () => {
 
     // Native send
     wsConn.send(JSON.stringify({
-      id: nanoid(),
-      type: helloEvent.id,
-      payload: {
+      deliveryId: 'h3-native-inbound-delivery',
+      hopsRemaining: 32,
+      eventa: {
         id: helloEvent.id,
         type: helloEvent.type,
         body: { result: 'Hello' },
-      } satisfies Eventa<{ result: string }>,
-      timestamp: Date.now(),
+      },
     }))
     // Context passive send
     ctx.emit(helloEvent, { result: 'Hello' }, { raw: { message: { } as Message } })

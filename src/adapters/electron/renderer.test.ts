@@ -6,10 +6,11 @@ import type { IpcRendererEvent } from 'electron'
 import type { Mock } from 'vitest'
 
 import type { Eventa } from '../../eventa'
+import type { EventaInner } from '../../internal'
 
 import { describe, expect, it, vi } from 'vitest'
 
-import { defineEventa, defineInboundEventa } from '../../eventa'
+import { defineEventa } from '../../eventa'
 import { defineInvoke, defineInvokeHandler } from '../../invoke'
 import { defineInvokeEventa } from '../../invoke-shared'
 import { createUntilTriggeredOnce } from '../../utils'
@@ -31,7 +32,14 @@ describe('electron/renderer', async () => {
     ) => ({ eventa: event, options }))
 
     ctx.on(eventa, wrapper)
-    ctx.emit(defineInboundEventa(eventa.id), { message: 'Hello, Event Target!' }, { raw: { ipcRendererEvent: {} as IpcRendererEvent, event: { message: 'Hello, Event Target!' } } }) // emit: event_trigger
+    const onMocked = ipcRenderer.on as Mock
+    const inbound = {
+      deliveryId: 'electron-renderer-inbound-delivery',
+      hopsRemaining: 32,
+      eventa: { ...eventa, body: { message: 'Hello, Event Target!' } },
+    } satisfies EventaInner<{ message: string }>
+    const handleMessage = onMocked.mock.calls.find(([name]) => name === 'eventa-message')![1]
+    handleMessage({} as IpcRendererEvent, inbound)
     const event = await onceTriggered
     expect(event.eventa.body).toEqual({ message: 'Hello, Event Target!' })
     expect(event.options).toBeDefined()
@@ -41,7 +49,6 @@ describe('electron/renderer', async () => {
     expect(event.options!.raw).toHaveProperty('ipcRendererEvent')
     expect(event.options!.raw).toHaveProperty('event')
 
-    const onMocked = ipcRenderer.on as Mock
     expect(onMocked).toHaveBeenCalledTimes(2)
     expect(onMocked).toHaveBeenCalledWith('eventa-message', expect.any(Function))
     expect(onMocked).toHaveBeenCalledWith('eventa-error', expect.any(Function))
@@ -51,7 +58,7 @@ describe('electron/renderer', async () => {
     expect(sendMocked).toHaveBeenCalledTimes(1)
     expect(sendMocked.mock.calls[0][0]).toBeTypeOf('string')
     expect(sendMocked.mock.calls[0][1]).toBeTypeOf('object')
-    expect(sendMocked.mock.calls[0][1].payload.body).toEqual({ message: 'Hello, Eventa!' })
+    expect(sendMocked.mock.calls[0][1].eventa.body).toEqual({ message: 'Hello, Eventa!' })
   })
 
   it('should be able to invoke', async () => {
@@ -88,11 +95,11 @@ describe('electron/renderer', async () => {
     // Outbound
     expect(sendMocked.mock.calls[0][0]).toBeTypeOf('string')
     expect(sendMocked.mock.calls[0][1]).toBeTypeOf('object')
-    expect(sendMocked.mock.calls[0][1].payload.body.content).toEqual({ input: 100 })
+    expect(sendMocked.mock.calls[0][1].eventa.body.content).toEqual({ input: 100 })
 
     // Inbound
     expect(sendMocked.mock.calls[1][0]).toBeTypeOf('string')
     expect(sendMocked.mock.calls[1][1]).toBeTypeOf('object')
-    expect(sendMocked.mock.calls[1][1].payload.body.content).toEqual({ output: '100' })
+    expect(sendMocked.mock.calls[1][1].eventa.body.content).toEqual({ output: '100' })
   })
 })

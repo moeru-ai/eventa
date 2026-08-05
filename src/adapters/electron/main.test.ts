@@ -5,10 +5,11 @@ import type { BrowserWindow, IpcMain, IpcMainEvent, WebContents } from 'electron
 import type { Mock } from 'vitest'
 
 import type { Eventa } from '../../eventa'
+import type { EventaInner } from '../../internal'
 
 import { describe, expect, it, vi } from 'vitest'
 
-import { defineEventa, defineInboundEventa, defineOutboundEventa } from '../../eventa'
+import { defineEventa, defineOutboundEventa } from '../../eventa'
 import { defineInvoke, defineInvokeHandler } from '../../invoke'
 import { defineInvokeEventa } from '../../invoke-shared'
 import { createUntilTriggeredOnce } from '../../utils'
@@ -39,7 +40,13 @@ describe('electron/main', async () => {
 
     // simulate receiving an event from ipcMain, every time we emit an inbound eventa, it will
     // emit another inbound eventa with transformed body along with raw data
-    ctx.emit(defineInboundEventa(eventa.id), { message: 'Hello, Event Target!' }, { raw: { ipcMainEvent: {} as IpcMainEvent, event: { message: 'Hello, Event Target!' } } }) // emit: event_trigger
+    const inbound = {
+      deliveryId: 'electron-main-inbound-delivery',
+      hopsRemaining: 32,
+      eventa: { ...eventa, body: { message: 'Hello, Event Target!' } },
+    } satisfies EventaInner<{ message: string }>
+    const handleMessage = onMocked.mock.calls.find(([name]) => name === 'eventa-message')![1]
+    handleMessage({} as IpcMainEvent, inbound)
     const event = await onceTriggered
     expect(event.eventa.body).toEqual({ message: 'Hello, Event Target!' })
     expect(event.options).toBeDefined()
@@ -58,10 +65,10 @@ describe('electron/main', async () => {
     expect(sendMocked).toHaveBeenCalledTimes(2)
     expect(sendMocked.mock.calls[0][0]).toEqual('eventa-message')
     expect(sendMocked.mock.calls[0][1]).toBeTypeOf('object')
-    expect(sendMocked.mock.calls[0][1].payload.body).toEqual({ message: 'Hello, outbound Eventa!' })
+    expect(sendMocked.mock.calls[0][1].eventa.body).toEqual({ message: 'Hello, outbound Eventa!' })
     expect(sendMocked.mock.calls[1][0]).toEqual('eventa-message')
     expect(sendMocked.mock.calls[1][1]).toBeTypeOf('object')
-    expect(sendMocked.mock.calls[1][1].payload.body).toEqual({ message: 'Hello, normal Eventa!' })
+    expect(sendMocked.mock.calls[1][1].eventa.body).toEqual({ message: 'Hello, normal Eventa!' })
   })
 
   it('context without window should be able to on and emit events through sender from raw body', async () => {
@@ -90,7 +97,13 @@ describe('electron/main', async () => {
 
     // simulate receiving an event from ipcMain, every time we emit an inbound eventa, it will
     // emit another inbound eventa with transformed body along with raw data
-    ctx.emit(defineInboundEventa(eventa.id), { message: 'Hello, Event Target!' }, { raw: { ipcMainEvent: { sender: browserWindow.webContents } as IpcMainEvent, event: { message: 'Hello, Event Target!' } } }) // emit: event_trigger
+    const inbound = {
+      deliveryId: 'electron-main-sender-inbound-delivery',
+      hopsRemaining: 32,
+      eventa: { ...eventa, body: { message: 'Hello, Event Target!' } },
+    } satisfies EventaInner<{ message: string }>
+    const handleMessage = onMocked.mock.calls.find(([name]) => name === 'eventa-message')![1]
+    handleMessage({ sender: browserWindow.webContents } as IpcMainEvent, inbound)
     const event = await onceTriggered
     expect(event.eventa.body).toEqual({ message: 'Hello, Event Target!' })
     expect(event.options).toBeDefined()
@@ -100,7 +113,7 @@ describe('electron/main', async () => {
     expect(event.options.raw).toHaveProperty('ipcMainEvent')
     expect(event.options.raw).toHaveProperty('event')
     expect(event.options.raw.ipcMainEvent.sender.id).toBe(1)
-    expect(event.options.raw.event).toEqual({ message: 'Hello, Event Target!' })
+    expect(event.options.raw.event).toBe(inbound)
 
     // simulate emitting an outbound eventa, it should send through the window's webContents
     ctx.emit(defineOutboundEventa(eventa.id), { message: 'Hello, outbound Eventa!' }, { raw: { ipcMainEvent: { sender: browserWindow.webContents } as IpcMainEvent, event: { message: 'Hello, Event Target!' } } })
@@ -111,10 +124,10 @@ describe('electron/main', async () => {
     expect(sendMocked).toHaveBeenCalledTimes(2)
     expect(sendMocked.mock.calls[0][0]).toBeTypeOf('string')
     expect(sendMocked.mock.calls[0][1]).toBeTypeOf('object')
-    expect(sendMocked.mock.calls[0][1].payload.body).toEqual({ message: 'Hello, outbound Eventa!' })
+    expect(sendMocked.mock.calls[0][1].eventa.body).toEqual({ message: 'Hello, outbound Eventa!' })
     expect(sendMocked.mock.calls[1][0]).toBeTypeOf('string')
     expect(sendMocked.mock.calls[1][1]).toBeTypeOf('object')
-    expect(sendMocked.mock.calls[1][1].payload.body).toEqual({ message: 'Hello, normal Eventa!' })
+    expect(sendMocked.mock.calls[1][1].eventa.body).toEqual({ message: 'Hello, normal Eventa!' })
 
     const isDestroyedMocked = browserWindow.webContents.isDestroyed as Mock
     expect(isDestroyedMocked).toHaveBeenCalledTimes(2)
@@ -152,10 +165,10 @@ describe('electron/main', async () => {
     expect(sendMocked).toHaveBeenCalledTimes(2)
     expect(sendMocked.mock.calls[0][0]).toBeTypeOf('string')
     expect(sendMocked.mock.calls[0][1]).toBeTypeOf('object')
-    expect(sendMocked.mock.calls[0][1].payload.body.content).toEqual({ input: 100 })
+    expect(sendMocked.mock.calls[0][1].eventa.body.content).toEqual({ input: 100 })
     expect(sendMocked.mock.calls[1][0]).toBeTypeOf('string')
     expect(sendMocked.mock.calls[1][1]).toBeTypeOf('object')
-    expect(sendMocked.mock.calls[1][1].payload.body.content).toEqual({ output: '100' })
+    expect(sendMocked.mock.calls[1][1].eventa.body.content).toEqual({ output: '100' })
   })
 
   it('should be able to invoke without window', async () => {
@@ -192,9 +205,9 @@ describe('electron/main', async () => {
     expect(sendMocked).toHaveBeenCalledTimes(2)
     expect(sendMocked.mock.calls[0][0]).toBeTypeOf('string')
     expect(sendMocked.mock.calls[0][1]).toBeTypeOf('object')
-    expect(sendMocked.mock.calls[0][1].payload.body.content).toEqual({ input: 100 })
+    expect(sendMocked.mock.calls[0][1].eventa.body.content).toEqual({ input: 100 })
     expect(sendMocked.mock.calls[1][0]).toBeTypeOf('string')
     expect(sendMocked.mock.calls[1][1]).toBeTypeOf('object')
-    expect(sendMocked.mock.calls[1][1].payload.body.content).toEqual({ output: '100' })
+    expect(sendMocked.mock.calls[1][1].eventa.body.content).toEqual({ output: '100' })
   })
 })

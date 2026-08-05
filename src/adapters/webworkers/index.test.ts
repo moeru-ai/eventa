@@ -5,12 +5,13 @@ import type { Mock } from 'vitest'
 
 import { describe, expect, it, vi } from 'vitest'
 
-import { createContext, defineOutboundWorkerEventa } from '.'
+import { createContext, defineWorkerEventa } from '.'
 import { createUntilTriggered } from '../..'
+import { linkChannel } from '../../channel'
+import { createContext as createBaseContext } from '../../context'
 import { defineEventa } from '../../eventa'
 import { defineInvoke, defineInvokeHandler } from '../../invoke'
-import { defineInvokeEventa } from '../../invoke-shared'
-import { generateWorkerPayload } from './internal'
+import { defineInvokeEventa, InvokeEventType } from '../../invoke-shared'
 
 import '@vitest/web-worker'
 
@@ -126,7 +127,7 @@ describe('web workers', async () => {
       onmessageerror: null,
     } satisfies Worker
     const { context: ctx } = createContext(worker as Worker)
-    const eventa = defineOutboundWorkerEventa('worker-transfer')
+    const eventa = defineWorkerEventa('worker-transfer')
 
     const buffer = new ArrayBuffer(8)
     ctx.emit(eventa, { message: buffer, transfer: [buffer] }, { raw: { message: {} as MessageEvent } })
@@ -135,13 +136,11 @@ describe('web workers', async () => {
       const postMessage = worker.postMessage as unknown as Mock
 
       expect(postMessage).toHaveBeenCalled()
-      expect(postMessage.mock.calls[0][0]).toHaveProperty('id')
-      expect(postMessage.mock.calls[0][0]).toHaveProperty('type', 'worker-transfer')
-      expect(postMessage.mock.calls[0][0]).toHaveProperty('payload')
-      expect(postMessage.mock.calls[0][0].payload).toHaveProperty('id', 'worker-transfer')
-      expect(postMessage.mock.calls[0][0].payload).toHaveProperty('type', 'event')
-      expect(postMessage.mock.calls[0][0].payload).toHaveProperty('_flowDirection', 'outbound')
-      expect(postMessage.mock.calls[0][0].payload).toHaveProperty('_workerTransfer', true)
+      expect(postMessage.mock.calls[0][0]).toHaveProperty('deliveryId')
+      expect(postMessage.mock.calls[0][0]).toHaveProperty('hopsRemaining', 31)
+      expect(postMessage.mock.calls[0][0].eventa).toHaveProperty('id', 'worker-transfer')
+      expect(postMessage.mock.calls[0][0].eventa).toHaveProperty('type', 'event')
+      expect(postMessage.mock.calls[0][0].eventa).toHaveProperty('_workerTransfer', true)
 
       expect(postMessage.mock.calls[0][1]).toHaveProperty('transfer')
       expect((postMessage.mock.calls[0][1].transfer as Transferable[]).length).toBe(1)
@@ -149,13 +148,15 @@ describe('web workers', async () => {
     }
 
     const onHandler = vi.fn()
-    ctx.on(defineOutboundWorkerEventa<ArrayBuffer>('worker-transfer-inbound'), onHandler)
+    const inboundEvent = defineWorkerEventa<ArrayBuffer>('worker-transfer-inbound')
+    ctx.on(inboundEvent, onHandler)
 
     const messageEvent = new MessageEvent('worker-transfer-inbound', {
-      data: generateWorkerPayload(
-        'worker-transfer-inbound',
-        { ...defineOutboundWorkerEventa('worker-transfer-inbound'), body: buffer },
-      ),
+      data: {
+        deliveryId: 'worker-transfer-inbound-delivery',
+        hopsRemaining: 31,
+        eventa: { ...inboundEvent, body: buffer },
+      },
     })
     worker.onmessage(messageEvent)
 
@@ -170,5 +171,57 @@ describe('web workers', async () => {
       expect(onHandler.mock.calls[0][1]).toHaveProperty('raw')
       expect(onHandler.mock.calls[0][1].raw).toHaveProperty('message')
     }
+  })
+
+  // ROOT CAUSE:
+  //
+  // Worker transfer normalization deleted nested invokeResponse metadata from
+  // the shared Eventa body. A later fan-out port then observed a value already
+  // changed by the worker adapter.
+  //
+  // Normalization now derives the worker wire body without mutating the inner
+  // value owned by the context.
+  it('does not mutate an invoke response shared with a channel fan-out', async () => {
+    const worker = {
+      postMessage: vi.fn(),
+      terminate: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+      onmessage: vi.fn(),
+      onerror: null,
+      onmessageerror: null,
+    } satisfies Worker
+    const { context } = createContext(worker as Worker)
+    const observer = createBaseContext()
+    const link = linkChannel(context, observer)
+    const buffer = new ArrayBuffer(8)
+    const response = {
+      invokeId: 'invoke-id',
+      content: {
+        response: { value: 'ok' },
+        invokeResponse: { transfer: [buffer] },
+      },
+    }
+    const responseEvent = {
+      ...defineEventa<typeof response>('worker:fan-out-response-receive-invoke-id'),
+      invokeType: InvokeEventType.ReceiveEvent,
+    }
+    let observed: unknown
+    observer.on(responseEvent, (event) => {
+      observed = event.body
+    })
+
+    await context.emit(responseEvent, response)
+
+    expect(observed).toEqual(response)
+    expect(response.content.invokeResponse).toEqual({ transfer: [buffer] })
+    expect(worker.postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventa: expect.objectContaining({ body: { invokeId: 'invoke-id', content: { value: 'ok' } } }),
+      }),
+      { transfer: [buffer] },
+    )
+    link.dispose()
   })
 })

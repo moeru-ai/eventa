@@ -1,6 +1,7 @@
 import { sleep } from '@moeru/std/sleep'
 import { describe, expect, it } from 'vitest'
 
+import { linkChannel, pipeChannel } from './channel'
 import { createContext } from './context'
 import { defineInvokeEventa } from './invoke-shared'
 import { defineStreamInvoke, defineStreamInvokeHandler, toStreamHandler } from './stream'
@@ -384,5 +385,247 @@ describe('stream', () => {
     }
 
     expect(outputs).toEqual([15])
+  })
+
+  // ROOT CAUSE:
+  //
+  // Stream invokes previously ignored both the initial request-send Promise
+  // and the caller context lifetime. Either failure left reader.read() pending
+  // forever because no response frame could arrive.
+  //
+  // The response stream now errors from the originating failure and cleans up
+  // all per-invocation listeners.
+  it('errors the response stream when its request send fails', async () => {
+    const caller = createContext()
+    const handler = createContext()
+    const events = defineInvokeEventa<number, number>('stream:request-send-failure')
+    const failure = new Error('stream request blocked')
+    const pipe = pipeChannel(caller, handler, {
+      plugins: async () => {
+        throw failure
+      },
+    })
+
+    const read = defineStreamInvoke(caller, events)(1).getReader().read()
+    await expect(read).rejects.toBe(failure)
+    pipe.dispose()
+  })
+
+  it('errors the response stream when a request-stream frame send fails', async () => {
+    const caller = createContext()
+    const handler = createContext()
+    const events = defineInvokeEventa<number, ReadableStream<number>>('stream:request-stream-send-failure')
+    const failure = new Error('stream request chunk blocked')
+    const pipe = pipeChannel(caller, handler, {
+      plugins: async (event) => {
+        if (event.id === events.sendEvent.id) {
+          throw failure
+        }
+      },
+    })
+    const request = new ReadableStream<number>({
+      start(controller) {
+        controller.enqueue(1)
+        controller.close()
+      },
+    })
+
+    const read = defineStreamInvoke(caller, events)(request).getReader().read()
+    await expect(read).rejects.toBe(failure)
+    pipe.dispose()
+  })
+
+  // ROOT CAUSE:
+  //
+  // Streaming invokes previously translated request iterator failures into
+  // cancellation, so the handler could not distinguish a failed producer from
+  // a caller abort.
+  //
+  // The request pump now publishes sendEventError after preceding chunks, and
+  // the handler errors its reconstructed request stream with the same value.
+  it('routes a request-source error to the streaming handler request stream', async () => {
+    const ctx = createContext()
+    const events = defineInvokeEventa<number, AsyncIterable<number>, Error, Error>('stream:request-source-error')
+    const failure = new Error('stream request source failed')
+    let handlerError: unknown
+    let settleHandler!: () => void
+    const handlerSettled = new Promise<void>((resolve) => {
+      settleHandler = resolve
+    })
+    defineStreamInvokeHandler(ctx, events, async function* (request) {
+      try {
+        for await (const _value of request) {
+          // Consume until the request producer reports its source error.
+        }
+      }
+      catch (error) {
+        handlerError = error
+      }
+      finally {
+        settleHandler()
+      }
+    })
+    const request = (async function* () {
+      yield 1
+      throw failure
+    }())
+
+    const read = defineStreamInvoke(ctx, events)(request).getReader().read()
+    await expect(read).rejects.toBe(failure)
+    await handlerSettled
+    expect(handlerError).toBe(failure)
+  })
+
+  it('errors the response stream when its caller context is aborted', async () => {
+    const caller = createContext()
+    const events = defineInvokeEventa<number, number>('stream:caller-context-abort')
+    const reason = new Error('caller transport closed')
+    const read = defineStreamInvoke(caller, events)(1).getReader().read()
+
+    caller.abort(reason)
+
+    await expect(read).rejects.toBe(reason)
+  })
+
+  it('aborts a streaming handler when its server context is aborted', async () => {
+    const caller = createContext()
+    const handler = createContext()
+    const events = defineInvokeEventa<number, number>('stream:handler-context-abort')
+    const link = linkChannel(caller, handler)
+    let notifyStarted!: () => void
+    const started = new Promise<void>((resolve) => {
+      notifyStarted = resolve
+    })
+    let notifyAborted!: () => void
+    const aborted = new Promise<void>((resolve) => {
+      notifyAborted = resolve
+    })
+    defineStreamInvokeHandler(handler, events, async function* (_request, options) {
+      notifyStarted()
+      await new Promise<void>((resolve) => {
+        options?.abortController?.signal.addEventListener('abort', () => {
+          notifyAborted()
+          resolve()
+        }, { once: true })
+      })
+    })
+
+    const consume = (async () => {
+      for await (const _value of defineStreamInvoke(caller, events)(1)) {
+        // The handler finishes without yielding after observing context abort.
+      }
+    })()
+    await started
+    handler.abort(new Error('server transport closed'))
+
+    await aborted
+    await consume
+    link.dispose()
+  })
+
+  it('ignores late request frames after the handler context is aborted', async () => {
+    const caller = createContext()
+    const handler = createContext()
+    const events = defineInvokeEventa<number, number>('stream:late-frames-after-context-abort')
+    const link = linkChannel(caller, handler)
+    let handlerCalls = 0
+    defineStreamInvokeHandler(handler, events, async function* () {
+      handlerCalls += 1
+    })
+    handler.abort(new Error('server closed'))
+
+    await caller.emit(events.sendEvent, { invokeId: 'late-invoke', content: 1, isReqStream: true })
+    await caller.emit(events.sendEvent, { invokeId: 'late-invoke', content: 2, isReqStream: true })
+    await caller.emit(events.sendEventStreamEnd, { invokeId: 'late-invoke', content: undefined })
+
+    expect(handlerCalls).toBe(0)
+    link.dispose()
+  })
+
+  // ROOT CAUSE:
+  //
+  // Cancellation could occur while the final request chunk emit was awaiting
+  // an asynchronous edge. The pump resumed afterward and sent stream-end even
+  // though cancellation had already stopped this invocation.
+  //
+  // The pump now checks its invocation state again after every awaited chunk
+  // and immediately before stream-end.
+  it('does not send stream-end when canceled during the final chunk send', async () => {
+    const caller = createContext()
+    const handler = createContext()
+    const events = defineInvokeEventa<number, ReadableStream<number>>('stream:cancel-final-chunk')
+    let notifyChunkBlocked!: () => void
+    const chunkBlocked = new Promise<void>((resolve) => {
+      notifyChunkBlocked = resolve
+    })
+    let releaseChunk!: () => void
+    const chunkGate = new Promise<void>((resolve) => {
+      releaseChunk = resolve
+    })
+    let notifyAbortBlocked!: () => void
+    const abortBlocked = new Promise<void>((resolve) => {
+      notifyAbortBlocked = resolve
+    })
+    let releaseAbort!: () => void
+    const abortGate = new Promise<void>((resolve) => {
+      releaseAbort = resolve
+    })
+    let streamEndFrames = 0
+    const link = linkChannel(caller, handler, {
+      plugins: async (event) => {
+        if (event.id === events.sendEvent.id) {
+          notifyChunkBlocked()
+          await chunkGate
+        }
+        else if (event.id === events.sendEventAbort.id) {
+          notifyAbortBlocked()
+          await abortGate
+        }
+        else if (event.id === events.sendEventStreamEnd.id) {
+          streamEndFrames += 1
+        }
+      },
+    })
+    let notifyHandlerSettled!: () => void
+    const handlerSettled = new Promise<void>((resolve) => {
+      notifyHandlerSettled = resolve
+    })
+    let handlerError: unknown
+    defineStreamInvokeHandler(handler, events, async function* (request) {
+      try {
+        for await (const _value of request) {
+          // Consume until the routed cancellation errors this request.
+        }
+      }
+      catch (error) {
+        handlerError = error
+      }
+      finally {
+        notifyHandlerSettled()
+      }
+    })
+    const request = new ReadableStream<number>({
+      start(controller) {
+        controller.enqueue(1)
+        controller.close()
+      },
+    })
+    const reader = defineStreamInvoke(caller, events)(request).getReader()
+    const read = reader.read()
+
+    await chunkBlocked
+    const cancel = reader.cancel('stop during final chunk')
+    await abortBlocked
+    releaseChunk()
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(streamEndFrames).toBe(0)
+    releaseAbort()
+
+    await cancel
+    await read
+    await handlerSettled
+    expect(handlerError).toMatchObject({ name: 'AbortError' })
+    expect(streamEndFrames).toBe(0)
+    link.dispose()
   })
 })
