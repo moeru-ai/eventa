@@ -1,102 +1,107 @@
 import type { Hooks, Message, Peer } from 'crossws'
 
-import type { EventContext } from '../../../context'
-import type { DirectionalEventa, Eventa } from '../../../eventa'
+import type { CreateContextOptions, EventContext } from '../../../context'
 
 import { createContext as createBaseContext } from '../../../context'
-import { and, defineEventa, defineInboundEventa, defineOutboundEventa, EventaFlowDirection, matchBy } from '../../../eventa'
-import { generateWebsocketPayload, parseWebsocketPayload } from '../internal'
+import { and, defineEventa, EventaFlowDirection, matchBy } from '../../../eventa'
+import { createOutboundInner, restoreInner } from '../../internal'
 
 export const wsConnectedEvent = defineEventa<{ id: string }>('eventa:adapters:websocket-peer:connected')
 export const wsDisconnectedEvent = defineEventa<{ id: string }>('eventa:adapters:websocket-peer:disconnected')
 export const wsErrorEvent = defineEventa<{ error: unknown }>('eventa:adapters:websocket-peer:error')
 
-export function createPeerContext(peer: Peer): {
-  hooks: Pick<Hooks, 'message' | 'close' | 'error'>
-  context: EventContext<any, { raw: { message: Message } }>
-} {
-  const peerId = peer.id
-  const ctx = createBaseContext<any, { raw: { message: Message } }>()
+/** Creates an Eventa Context for one H3 WebSocket peer. */
+export interface H3PeerAdapterOptions {
+  /** Delivery deduplication and hop policy for the created Context. */
+  context?: CreateContextOptions
+}
 
-  ctx.on(and(
-    matchBy((e: DirectionalEventa<any>) => e._flowDirection === EventaFlowDirection.Outbound || !e._flowDirection),
+export function createPeerContext(peer: Peer, options?: H3PeerAdapterOptions): {
+  hooks: Pick<Hooks, 'message' | 'close' | 'error'>
+  context: EventContext<undefined, { raw: { message: Message } }>
+} {
+  interface EmitOptions { raw: { message: Message } }
+  const peerId = peer.id
+  const ctx = createBaseContext<undefined, EmitOptions>(options?.context)
+  const stopSending = ctx.on(and(
+    matchBy(event => !('_flowDirection' in event) || !event._flowDirection || event._flowDirection === EventaFlowDirection.Outbound),
     matchBy('*'),
   ), (event) => {
-    const data = JSON.stringify(generateWebsocketPayload(event.id, { ...defineOutboundEventa(event.type), ...event }))
-    peer.send(data)
+    const inner = createOutboundInner(event)
+    if (inner) {
+      peer.send(JSON.stringify(inner))
+    }
   })
 
   return {
     hooks: {
-      message(peer, message) {
-        if (peer.id === peerId) {
-          try {
-            const { type, payload } = parseWebsocketPayload<Eventa<any>>(message.text())
-            ctx.emit(defineInboundEventa(type), payload.body, { raw: { message } })
-          }
-          catch (error) {
-            // Per-message parse failure — recoverable, do NOT abort lifetime.
-            console.error('Failed to parse WebSocket message:', error)
-            ctx.emit(wsErrorEvent, { error }, { raw: { message } })
-          }
+      message(incomingPeer, message) {
+        // crossws invokes shared hooks for every peer; this context owns one peer.
+        if (incomingPeer.id !== peerId) {
+          return
+        }
+        try {
+          const inner = restoreInner(JSON.parse(message.text()))
+          void ctx.emit(inner.eventa, inner.eventa.body, { raw: { message } }).catch(emitError => console.error('Failed to emit WebSocket peer message:', emitError))
+        }
+        catch (error) {
+          // Per-message parse failures are recoverable and do not end the peer lifetime.
+          console.error('Failed to parse WebSocket message:', error)
+          void ctx.emit(wsErrorEvent, { error }, { raw: { message } }).catch(emitError => console.error('Failed to emit WebSocket peer parse error:', emitError))
         }
       },
-      close(peer, details) {
-        // crossws fires close for ANY peer; filter to our own.
-        if (peer.id !== peerId) {
+      close(incomingPeer, details) {
+        // crossws invokes shared hooks for every peer; ignore other peer closures.
+        if (incomingPeer.id !== peerId) {
           return
         }
         const reasonText = details.reason ? ` (${details.reason})` : ''
-        // Cascade-cancel any in-flight `defineInvoke(...)` so server-side code
-        // that issued an invoke back to this peer doesn't hang on close.
+        // Reject server-side invokes that would otherwise wait on a closed peer.
+        stopSending()
         ctx.abort(new Error(`eventa: invoke cancelled, peer disconnected${reasonText}`))
-        ctx.emit(wsDisconnectedEvent, { id: peerId })
+        void ctx.emit(wsDisconnectedEvent, { id: peerId }).catch(emitError => console.error('Failed to emit WebSocket peer close event:', emitError))
       },
-      error(peer, error) {
-        if (peer.id !== peerId) {
+      error(incomingPeer, error) {
+        if (incomingPeer.id !== peerId) {
           return
         }
+        stopSending()
         ctx.abort(error instanceof Error ? error : new Error('eventa: invoke cancelled, peer error'))
-        ctx.emit(wsErrorEvent, { error })
+        void ctx.emit(wsErrorEvent, { error }).catch(emitError => console.error('Failed to emit WebSocket peer error:', emitError))
       },
     },
     context: ctx,
   }
 }
 
-export interface PeerContext { peer: Peer, context: EventContext<any, { raw: { message: Message } }> }
+export interface PeerContext { peer: Peer, context: EventContext<undefined, { raw: { message: Message } }> }
 
-export function createPeerHooks(): { hooks: Partial<Hooks>, untilLeastOneConnected: Promise<PeerContext> } {
+export function createPeerHooks(options?: H3PeerAdapterOptions): { hooks: Partial<Hooks>, untilLeastOneConnected: Promise<PeerContext> } {
   let resolve: (value: PeerContext) => void
   const untilLeastOneConnected = new Promise<PeerContext>((r) => {
     resolve = r
   })
-
-  // NOTICE: single-peer model — these closure-scoped hook refs get overwritten
-  // when a second peer connects, so `createPeerHooks` only correctly serves the
-  // most-recently-opened peer. Multi-peer support requires a peerId-keyed Map
-  // and a different "untilLeastOneConnected" semantic; out of scope here.
+  // NOTICE:
+  // These hook references are replaced when another peer connects, so this
+  // helper serves only the most recently opened peer. Multi-peer ownership
+  // requires a peer-id keyed registry and a different connection API.
+  // Source/context: crossws exposes one shared hook set for all connected peers.
+  // Remove this notice when createPeerHooks owns such a registry.
   let message: Hooks['message'] | undefined
   let close: Hooks['close'] | undefined
   let error: Hooks['error'] | undefined
 
   const hooks: Pick<Hooks, 'open' | 'message' | 'close' | 'error'> = {
     open: (peer) => {
-      const { context, hooks } = createPeerContext(peer)
-      message = hooks.message
-      close = hooks.close
-      error = hooks.error
-      resolve({ peer, context })
+      const peerContext = createPeerContext(peer, options)
+      message = peerContext.hooks.message
+      close = peerContext.hooks.close
+      error = peerContext.hooks.error
+      resolve({ peer, context: peerContext.context })
     },
-    message: (peer, msg) => {
-      message?.(peer, msg)
-    },
-    close: (peer, details) => {
-      close?.(peer, details)
-    },
-    error: (peer, err) => {
-      error?.(peer, err)
-    },
+    message: (peer, msg) => message?.(peer, msg),
+    close: (peer, details) => close?.(peer, details),
+    error: (peer, err) => error?.(peer, err),
   }
 
   return { hooks, untilLeastOneConnected }

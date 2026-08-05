@@ -1,14 +1,22 @@
 import type { WSContext, WSEvents } from 'hono/ws'
 
+import type { CreateContextOptions } from '../../../context'
 import type { HonoWsEventContext, HonoWsRawEventOptions } from './shared'
 
 import { createContext as createBaseContext } from '../../../context'
-import { emitInboundMessage, forwardOutboundEvents } from './internal'
+import { and, EventaFlowDirection, matchBy } from '../../../eventa'
+import { createOutboundInner, restoreInner } from '../../internal'
+import { readMessageText } from './internal'
 import { wsConnectedEvent, wsDisconnectedEvent, wsErrorEvent } from './shared'
 
 export interface GlobalHooksResult {
   context: HonoWsEventContext
   hooks: WSEvents
+}
+
+export interface CreateGlobalHooksOptions {
+  /** Delivery deduplication and hop policy for the created Context. */
+  context?: CreateContextOptions
 }
 
 /**
@@ -24,11 +32,19 @@ export interface GlobalHooksResult {
  * Returns:
  * - A shared context plus Hono websocket hooks.
  */
-export function createGlobalHooks(): GlobalHooksResult {
-  const context = createBaseContext<any, HonoWsRawEventOptions>()
+export function createGlobalHooks(options: CreateGlobalHooksOptions = {}): GlobalHooksResult {
+  const context = createBaseContext<undefined, HonoWsRawEventOptions>(options.context)
   const peers = new Set<WSContext>()
 
-  forwardOutboundEvents(context, (data) => {
+  context.on(and(
+    matchBy(event => !('_flowDirection' in event) || !event._flowDirection || event._flowDirection === EventaFlowDirection.Outbound),
+    matchBy('*'),
+  ), (event) => {
+    const inner = createOutboundInner(event)
+    if (!inner) {
+      return
+    }
+    const data = JSON.stringify(inner)
     for (const peer of peers) {
       peer.send(data)
     }
@@ -37,20 +53,29 @@ export function createGlobalHooks(): GlobalHooksResult {
   const hooks: WSEvents = {
     onOpen(event, ws) {
       peers.add(ws)
-      context.emit(wsConnectedEvent, undefined, { raw: { open: event } })
+      void context.emit(wsConnectedEvent, undefined, { raw: { open: event } }).catch(emitError => console.error('Failed to emit Hono WebSocket open event:', emitError))
     },
 
     onMessage(event) {
-      void emitInboundMessage(context, event)
+      void readMessageText(event.data)
+        .then(message => restoreInner(JSON.parse(message)))
+        .then(
+          inner => context.emit(inner.eventa, inner.eventa.body, { raw: { message: event } }),
+          (error) => {
+            console.error('Failed to parse WebSocket message:', error)
+            return context.emit(wsErrorEvent, { error }, { raw: { message: event } })
+          },
+        )
+        .catch(emitError => console.error('Failed to emit Hono WebSocket message:', emitError))
     },
 
     onClose(event, ws) {
       peers.delete(ws)
-      context.emit(wsDisconnectedEvent, undefined, { raw: { close: event } })
+      void context.emit(wsDisconnectedEvent, undefined, { raw: { close: event } }).catch(emitError => console.error('Failed to emit Hono WebSocket close event:', emitError))
     },
 
     onError(event) {
-      context.emit(wsErrorEvent, { error: event }, { raw: { error: event } })
+      void context.emit(wsErrorEvent, { error: event }, { raw: { error: event } }).catch(emitError => console.error('Failed to emit Hono WebSocket error:', emitError))
     },
   }
 

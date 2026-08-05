@@ -1,71 +1,68 @@
 import type { Transferable, Worker } from 'node:worker_threads'
 
-import type { EventContext } from '../../context'
-import type { DirectionalEventa, Eventa } from '../../eventa'
+import type { CreateContextOptions } from '../../context'
+import type { WorkerContextExtensions } from '../webworkers/shared'
 
 import { createContext as createBaseContext } from '../../context'
-import { and, defineInboundEventa, defineOutboundEventa, EventaFlowDirection, matchBy } from '../../eventa'
+import { and, EventaFlowDirection, matchBy } from '../../eventa'
 import { toError } from '../errors'
-import { generateWorkerPayload, parseWorkerPayload } from '../webworkers/internal'
-import { isWorkerEventa, normalizeOnListenerParameters, workerErrorEvent } from '../webworkers/shared'
+import { createOutboundInner } from '../internal'
+import { createWorkerInnerEventa, restoreInner } from '../webworkers/internal'
+import { workerErrorEvent } from '../webworkers/shared'
 
-export function createContext(worker: Worker) {
-  const ctx = createBaseContext() as EventContext<
-    {
-      invokeRequest?: { transfer?: Transferable[] }
-      invokeResponse?: { transfer?: Transferable[] }
-    },
-    { raw: { message?: unknown, error?: unknown, messageError?: unknown }, transfer?: Transferable[] }
-  >
+/** Creates an Eventa Context backed by a Node.js Worker. */
+export interface WorkerThreadAdapterOptions {
+  /** Delivery deduplication and hop policy for the created Context. */
+  context?: CreateContextOptions
+}
 
-  ctx.on(and(
-    matchBy((e: DirectionalEventa<any>) => e._flowDirection === EventaFlowDirection.Outbound || !e._flowDirection),
+/** Worker-thread metadata and transferables available while emitting an Eventa. */
+export interface WorkerThreadEmitOptions {
+  raw: { message?: unknown, error?: unknown, messageError?: unknown }
+  transfer?: Transferable[]
+}
+
+export function createContext(worker: Worker, options?: WorkerThreadAdapterOptions) {
+  const ctx = createBaseContext<WorkerContextExtensions, WorkerThreadEmitOptions>(options?.context)
+  const stopSending = ctx.on(and(
+    matchBy(event => !('_flowDirection' in event) || !event._flowDirection || event._flowDirection === EventaFlowDirection.Outbound),
     matchBy('*'),
-  ), (event, options) => {
-    const { body, transfer } = normalizeOnListenerParameters(event, options)
-    const data = generateWorkerPayload(event.id, { ...defineOutboundEventa(event.type), ...event, body })
-    if (transfer != null) {
-      worker.postMessage(data, transfer as unknown as Transferable[])
+  ), (event, emitOptions) => {
+    const inner = createOutboundInner(event)
+    if (!inner) {
       return
     }
-
-    worker.postMessage(data)
+    const outgoing = createWorkerInnerEventa(inner, emitOptions)
+    worker.postMessage(outgoing.inner, outgoing.transfer)
   })
 
   worker.on('message', (message) => {
     try {
-      const { type, payload } = parseWorkerPayload<Eventa<any>>(message)
-      if (!isWorkerEventa(payload)) {
-        ctx.emit(defineInboundEventa(type), payload.body, { raw: { message } })
-      }
-      else {
-        ctx.emit(defineInboundEventa(type), { message: payload.body }, { raw: { message } })
-      }
+      const inner = restoreInner(message)
+      void ctx.emit(inner.eventa, inner.eventa.body, { raw: { message } }).catch(emitError => console.error('Failed to emit Node worker message:', emitError))
     }
     catch (error) {
       console.error('Failed to parse Node worker message:', error)
-      ctx.emit(workerErrorEvent, { kind: 'parse', error: toError(error, 'eventa: node worker message parse error') }, { raw: { message } })
+      void ctx.emit(workerErrorEvent, { kind: 'parse', error: toError(error, 'eventa: node worker message parse error') }, { raw: { message } }).catch(emitError => console.error('Failed to emit Node worker parse error:', emitError))
     }
   })
-
   worker.on('error', (event) => {
-    // Fatal worker error. Abort lifetime so any in-flight invoke rejects;
-    // emit the business event for non-invoke listeners.
+    // A fatal worker failure terminates invokes owned by this context.
     const error = toError(event, 'eventa: invoke cancelled, node worker error')
+    stopSending()
     ctx.abort(error)
-    ctx.emit(workerErrorEvent, { kind: 'fatal', error }, { raw: { error: event } })
+    void ctx.emit(workerErrorEvent, { kind: 'fatal', error }, { raw: { error: event } }).catch(emitError => console.error('Failed to emit Node worker error:', emitError))
   })
-
   worker.on('messageerror', (event) => {
+    // The transport cannot reconstruct the message, so its lifetime is unusable.
     const error = toError(event, 'eventa: invoke cancelled, node worker messageerror')
+    stopSending()
     ctx.abort(error)
-    ctx.emit(workerErrorEvent, { kind: 'messageerror', error, message: event }, { raw: { messageError: event } })
+    void ctx.emit(workerErrorEvent, { kind: 'messageerror', error, message: event }, { raw: { messageError: event } }).catch(emitError => console.error('Failed to emit Node worker message error:', emitError))
   })
 
-  return {
-    context: ctx,
-  }
+  return { context: ctx }
 }
 
-export { defineOutboundWorkerEventa, defineWorkerEventa, isWorkerEventa, workerErrorEvent } from '../webworkers/shared'
+export { defineWorkerEventa, isWorkerEventa, workerErrorEvent } from '../webworkers/shared'
 export type * from '../webworkers/shared'

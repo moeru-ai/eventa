@@ -57,11 +57,10 @@ describe('tauri adapter', () => {
       target,
       'eventa-message',
       expect.objectContaining({
-        type: 'tauri:event',
-        payload: expect.objectContaining({
+        eventa: expect.objectContaining({
+          id: 'tauri:event',
           body: { message: 'outbound' },
           metadata: { feature: 'settings' },
-          _flowDirection: EventaFlowDirection.Outbound,
         }),
       }),
     )
@@ -69,19 +68,17 @@ describe('tauri adapter', () => {
     const handler = vi.fn()
     context.on(event, handler)
     const rawEvent = receive({
-      id: 'message-id',
-      type: 'tauri:event',
-      payload: {
+      deliveryId: 'tauri-inbound-delivery',
+      hopsRemaining: 32,
+      eventa: {
         ...event,
         body: { message: 'inbound' },
-        _flowDirection: EventaFlowDirection.Outbound,
       },
     })
 
     expect(handler).toHaveBeenCalledWith(
       expect.objectContaining({
         body: { message: 'inbound' },
-        _flowDirection: EventaFlowDirection.Inbound,
       }),
       { raw: { event: rawEvent } },
     )
@@ -132,6 +129,7 @@ describe('tauri adapter', () => {
 
     expect(handler).toHaveBeenCalledWith(
       expect.objectContaining({
+        _flowDirection: EventaFlowDirection.Inbound,
         body: expect.objectContaining({
           kind: 'parse',
           error: expect.any(TypeError),
@@ -161,7 +159,7 @@ describe('tauri adapter', () => {
     const second = context.emit(event, 2)
 
     expect(tauri.emitTo).toHaveBeenCalledTimes(2)
-    expect(tauri.emitTo.mock.calls[1][2].payload.body).toBe(2)
+    expect(tauri.emitTo.mock.calls[1][2].eventa.body).toBe(2)
 
     rejectFirst(error)
     await firstResult

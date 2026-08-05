@@ -4,9 +4,8 @@ import type { HonoWsInvocableEventContext } from '.'
 
 import { describe, expect, it, vi } from 'vitest'
 
-import { createGlobalHooks, createPeerHooks, wsDisconnectedEvent } from '.'
+import { createGlobalHooks, createPeerHooks, wsConnectedEvent, wsDisconnectedEvent } from '.'
 import { defineEventa, defineInvoke, defineInvokeEventa, defineInvokeHandler } from '../../..'
-import { nanoid } from '../../../eventa'
 
 function createMockWSContext(): WSContext & { sentMessages: string[] } {
   const sentMessages: string[] = []
@@ -29,6 +28,27 @@ function createMessageEvent(data: string): Parameters<NonNullable<WSEvents['onMe
 }
 
 describe('hono websocket adapter', () => {
+  // ROOT CAUSE:
+  //
+  // Hono lifecycle hooks cannot return the Context emit promise to a caller.
+  // Ignoring a listener or Channel rejection therefore leaked an unhandled
+  // promise from open and close callbacks. The adapter now observes and reports
+  // those lifecycle emit failures.
+  it('reports a rejected global lifecycle emit', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => void 0)
+    const failure = new Error('open listener failed')
+    const { context, hooks } = createGlobalHooks()
+    context.on(wsConnectedEvent, () => {
+      throw failure
+    })
+
+    hooks.onOpen?.(new Event('open'), createMockWSContext())
+    await new Promise(resolve => setTimeout(resolve, 0))
+
+    expect(consoleError).toHaveBeenCalledWith('Failed to emit Hono WebSocket open event:', failure)
+    consoleError.mockRestore()
+  })
+
   it('creates a peer context on open and emits disconnect on close', () => {
     const onContext = vi.fn()
     const onDisconnect = vi.fn()
@@ -62,9 +82,9 @@ describe('hono websocket adapter', () => {
     const ws = createMockWSContext()
     hooks.onOpen?.(new Event('open'), ws)
     hooks.onMessage?.(createMessageEvent(JSON.stringify({
-      id: nanoid(),
-      type: echo.sendEvent.id,
-      payload: {
+      deliveryId: 'hono-invoke-delivery',
+      hopsRemaining: 32,
+      eventa: {
         id: echo.sendEvent.id,
         type: echo.sendEvent.type,
         body: {
@@ -72,18 +92,17 @@ describe('hono websocket adapter', () => {
           content: { in: 'hello' },
         },
       },
-      timestamp: Date.now(),
     })), ws)
 
     await new Promise(resolve => setTimeout(resolve, 20))
 
     const responses = ws.sentMessages
       .map(message => JSON.parse(message))
-      .filter(message => message.type === `${echo.receiveEvent.id}-${invokeId}`)
+      .filter(message => message.eventa.id === `${echo.receiveEvent.id}-${invokeId}`)
 
     expect(responses).toHaveLength(1)
-    expect(responses[0].payload.body.invokeId).toBe(invokeId)
-    expect(responses[0].payload.body.content).toEqual({ out: 'HELLO' })
+    expect(responses[0].eventa.body.invokeId).toBe(invokeId)
+    expect(responses[0].eventa.body.content).toEqual({ out: 'HELLO' })
   })
 
   it('forwards outbound peer context events over the wire', () => {
@@ -105,8 +124,8 @@ describe('hono websocket adapter', () => {
     expect(ws.sentMessages).toHaveLength(1)
 
     const sent = JSON.parse(ws.sentMessages[0])
-    expect(sent.type).toBe(ping.id)
-    expect(sent.payload.body).toEqual({ msg: 'pong' })
+    expect(sent.eventa.id).toBe(ping.id)
+    expect(sent.eventa.body).toEqual({ msg: 'pong' })
   })
 
   // ROOT CAUSE:
@@ -150,8 +169,8 @@ describe('hono websocket adapter', () => {
 
     expect(peerA.sentMessages).toHaveLength(1)
     expect(peerB.sentMessages).toHaveLength(1)
-    expect(JSON.parse(peerA.sentMessages[0]).payload.body).toEqual({ msg: 'hello' })
-    expect(JSON.parse(peerB.sentMessages[0]).payload.body).toEqual({ msg: 'hello' })
+    expect(JSON.parse(peerA.sentMessages[0]).eventa.body).toEqual({ msg: 'hello' })
+    expect(JSON.parse(peerB.sentMessages[0]).eventa.body).toEqual({ msg: 'hello' })
   })
 
   it('routes inbound messages through the global context', async () => {
@@ -163,14 +182,13 @@ describe('hono websocket adapter', () => {
     context.on(ping, handler)
     hooks.onOpen?.(new Event('open'), ws)
     hooks.onMessage?.(createMessageEvent(JSON.stringify({
-      id: nanoid(),
-      type: ping.id,
-      payload: {
+      deliveryId: 'hono-global-inbound-delivery',
+      hopsRemaining: 32,
+      eventa: {
         id: ping.id,
         type: ping.type,
         body: { msg: 'hello' },
       },
-      timestamp: Date.now(),
     })), ws)
     await new Promise(resolve => setTimeout(resolve, 20))
 

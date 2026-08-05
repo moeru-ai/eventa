@@ -1,10 +1,11 @@
 import type { EventContext } from './context'
 import type { Eventa } from './eventa'
-import type { InvokeEventa, InvokeHandlerEventa, ReceiveEvent, ReceiveEventError, SendEvent, SendEventAbort, SendEventStreamEnd } from './invoke-shared'
+import type { InvokeEventa, InvokeHandlerEventa, ReceiveEvent, ReceiveEventError, SendEvent, SendEventAbort, SendEventError, SendEventStreamEnd } from './invoke-shared'
 
 import { defineEventa, nanoid } from './eventa'
 import { isReceiveEvent } from './invoke-shared'
-import { createAbortError, isAbortError, isAsyncIterable, isReadableStream } from './utils'
+import { InvokeState } from './invoke-state'
+import { createAbortError, isAsyncIterable, isReadableStream } from './utils'
 
 type IsInvokeRequestOptional<EC extends EventContext<any, any>>
   = EC extends EventContext<infer E, any>
@@ -93,6 +94,7 @@ interface InternalInvokeHandler<
   IM = undefined,
 > {
   onSend: (params: Eventa<NonNullable<InvokeEventa<Res, Req, ResErr, ReqErr, M, IM>['sendEvent']['body']>>, eventOptions?: EO) => void
+  onSendError: (params: Eventa<NonNullable<InvokeEventa<Res, Req, ResErr, ReqErr, M, IM>['sendEventError']['body']>>, eventOptions?: EO) => void
   onSendStreamEnd: (params: Eventa<NonNullable<InvokeEventa<Res, Req, ResErr, ReqErr, M, IM>['sendEventStreamEnd']['body']>>, eventOptions?: EO) => void
   onSendAbort: (params: Eventa<NonNullable<InvokeEventa<Res, Req, ResErr, ReqErr, M, IM>['sendEventAbort']['body']>>, eventOptions?: EO) => void
   cleanup: () => void
@@ -117,6 +119,8 @@ export interface InvocableEventContext<E, EO> extends EventContext<E, EO> {
  *
  * It supports unary or streaming requests, but returns a single response.
  * Use `defineStreamInvoke` when you expect a stream of responses.
+ * Streaming request chunks are ordered within this invocation even though the
+ * underlying context does not order independent emits.
  *
  * If you want stream input, set `Req` to `ReadableStream<T>` or `AsyncIterable<T>`
  * (or a union type like `T | ReadableStream<T>` for optional streaming).
@@ -191,11 +195,12 @@ export function defineInvoke<
       const invokeReceiveEventError = defineEventa(`${event.receiveEventError.id}-${invokeId}`) as ReceiveEventError<Res, Req, ResErr, ReqErr, M, IM>
       delete invokeReceiveEventError.metadata
 
-      const { signal, ...emitOptions } = (options ?? {}) as ExtractInvokeRequestOptions<ECtx> & Record<string, any>
+      const { signal, ...emitOptions } = (options ?? {}) as ExtractInvokeRequestOptions<ECtx> & Record<string, unknown>
+      const requestEmitOptions = emitOptions as EOpts
       let finished = false
 
       const onAbort = () => {
-        ctx.emit(event.sendEventAbort, { invokeId, content: signal?.reason }, emitOptions as any)
+        void ctx.emit(event.sendEventAbort, { invokeId, content: signal?.reason }, requestEmitOptions).catch(() => void 0)
         // eslint-disable-next-line ts/no-use-before-define
         finishReject(createAbortError(signal?.reason))
       }
@@ -285,47 +290,70 @@ export function defineInvoke<
       }
 
       if (!isReadableStream<Req>(req) && !isAsyncIterable<Req>(req)) {
-        ctx.emit(event.sendEvent, { invokeId, content: req as Req }, emitOptions as any)
+        void ctx.emit(event.sendEvent, { invokeId, content: req as Req }, requestEmitOptions).catch(finishReject)
       }
       else {
         const sendChunk = (chunk: Req) => {
           if (finished) {
-            return
+            return Promise.resolve()
           }
-          ctx.emit(event.sendEvent, { invokeId, content: chunk, isReqStream: true }, emitOptions as any) // emit: event_trigger
+          return ctx.emit(event.sendEvent, { invokeId, content: chunk, isReqStream: true }, requestEmitOptions) // emit: event_trigger
         }
 
         const sendEnd = () => {
           if (finished) {
-            return
+            return Promise.resolve()
           }
-          ctx.emit(event.sendEventStreamEnd, { invokeId, content: undefined }, emitOptions as any) // emit: event_stream_end
+          return ctx.emit(event.sendEventStreamEnd, { invokeId, content: undefined }, requestEmitOptions) // emit: event_stream_end
         }
 
         const pump = async () => {
+          let sending = false
           try {
+            // Context emits are unordered across calls. Await each frame here so
+            // this invocation's chunks cannot be overtaken by its end frame.
             for await (const chunk of req) {
               // If aborted already, no further emits
               if (signal?.aborted) {
                 return
               }
 
-              sendChunk(chunk)
+              sending = true
+              await sendChunk(chunk)
+              sending = false
+              if (finished) {
+                return
+              }
             }
 
-            sendEnd()
+            if (finished) {
+              return
+            }
+            sending = true
+            await sendEnd()
           }
           catch (error) {
-            // Make sure no further emits after abort
-            if (signal?.aborted) {
-              return
+            if (sending) {
+              // A partial request may already exist remotely. Abort it as a
+              // best-effort cleanup, but reject locally with the send failure.
+              void ctx.emit(event.sendEventAbort, { invokeId, content: error }, requestEmitOptions).catch(() => void 0)
             }
-            if (isAbortError(error)) {
-              ctx.emit(event.sendEventAbort, { invokeId, content: error }, emitOptions as any)
-              return
+            else {
+              // Request-source failures are protocol data, distinct from
+              // cancellation. Await the error frame to preserve frame order.
+              finishReject(error)
+              try {
+                await ctx.emit(event.sendEventError, { invokeId, content: error as ReqErr }, requestEmitOptions)
+              }
+              catch (publishError) {
+                // The error frame may follow partial request data. If publishing
+                // it fails, try to terminate that remote request explicitly.
+                void ctx.emit(event.sendEventAbort, { invokeId, content: publishError }, requestEmitOptions).catch(() => void 0)
+              }
             }
-
-            ctx.emit(event.sendEventError, { invokeId, content: error as ReqErr }, emitOptions as any) // emit: event_error
+            if (sending) {
+              finishReject(error)
+            }
           }
         }
 
@@ -384,6 +412,19 @@ export function defineInvokes<
  * The handler can accept a unary or streaming request; it must return
  * a single response (or an extendable response envelope).
  *
+ * Triggering workflow:
+ *
+ * {@link defineInvoke}
+ *   -> {@link EventContext.on}
+ *     -> `sendEvent` / `sendEventError` / `sendEventStreamEnd` / `sendEventAbort`
+ *       -> {@link defineInvokeHandler}
+ *
+ * Upstream:
+ * - {@link defineInvoke}
+ *
+ * Downstream:
+ * - {@link EventContext.emit}
+ *
  * @example
  * ```ts
  * const events = defineInvokeEventa<{ id: string }, { name: string }>()
@@ -396,6 +437,7 @@ export function defineInvokes<
  * @param ctx Event context on the handler/server side.
  * @param event Invoke event definition created by `defineInvokeEventa`.
  * @param handler Handler that returns a response (or response + metadata).
+ * @returns A disposer that removes protocol listeners and registry ownership. Active handlers keep running; their request streams and abort controllers remain valid until those handlers settle.
  */
 export function defineInvokeHandler<
   Res,
@@ -414,71 +456,36 @@ export function defineInvokeHandler<
   if (!ctx.invokeHandlers) {
     ctx.invokeHandlers = new Map()
   }
+  const handlerRegistry = ctx.invokeHandlers
 
-  let handlers = ctx.invokeHandlers?.get(event.sendEvent.id)
-  if (!handlers) {
-    handlers = new Map()
-    ctx.invokeHandlers?.set(event.sendEvent.id, handlers)
+  let registeredHandlers = handlerRegistry.get(event.sendEvent.id)
+  if (!registeredHandlers) {
+    registeredHandlers = new Map()
+    handlerRegistry.set(event.sendEvent.id, registeredHandlers)
+  }
+  const handlers = registeredHandlers
+
+  function removeHandler(internalHandler: InternalInvokeHandler<Res, Req, ResErr, ReqErr, EOpts, M, IM>) {
+    ctx.off(event.sendEvent, internalHandler.onSend)
+    ctx.off(event.sendEventError, internalHandler.onSendError)
+    ctx.off(event.sendEventStreamEnd, internalHandler.onSendStreamEnd)
+    ctx.off(event.sendEventAbort, internalHandler.onSendAbort)
+    internalHandler.cleanup()
+    handlers.delete(handler)
+    if (handlers.size === 0 && handlerRegistry.get(event.sendEvent.id) === handlers) {
+      handlerRegistry.delete(event.sendEvent.id)
+    }
   }
 
   const existingHandler = handlers.get(handler) as InternalInvokeHandler<Res, Req, ResErr, ReqErr, EOpts, M, IM> | undefined
   if (existingHandler) {
-    return () => {
-      ctx.off(event.sendEvent, existingHandler.onSend)
-      ctx.off(event.sendEventStreamEnd, existingHandler.onSendStreamEnd)
-      ctx.off(event.sendEventAbort, existingHandler.onSendAbort)
-      existingHandler.cleanup()
-    }
+    return () => removeHandler(existingHandler)
   }
 
-  const streamStates = new Map<string, ReadableStreamDefaultController<Req>>()
-  const abortControllers = new Map<string, AbortController>()
-  const abortReasons = new Map<string, unknown>()
-
-  const scheduleAbort = (controller: AbortController, reason: unknown) => {
-    // NOTICE: use microtask to avoid aborting before the handler starts.
-    // This is important when the handler creates streams or async iterables
-    if (typeof queueMicrotask !== 'undefined') {
-      queueMicrotask(() => controller.abort(reason))
-      return
-    }
-
-    Promise.resolve().then(() => {
-      return controller.abort(reason)
-    })
-  }
-
-  const ctxSignal = ctx.signal
-
-  const onCtxAbort = () => {
-    for (const controller of abortControllers.values()) {
-      scheduleAbort(controller, ctxSignal?.reason)
-    }
-
-    for (const controller of streamStates.values()) {
-      controller.error(createAbortError(ctxSignal?.reason))
-    }
-
-    streamStates.clear()
-  }
-
-  if (ctxSignal.aborted) {
-    onCtxAbort()
-  }
-  else {
-    ctxSignal.addEventListener('abort', onCtxAbort, { once: true })
-  }
+  const requestState = new InvokeState<Req>(ctx.signal)
 
   const handleInvoke = async (invokeId: string, payload: Req, options?: EOpts) => {
-    const abortController = new AbortController()
-    abortControllers.set(invokeId, abortController)
-
-    if (ctxSignal.aborted) {
-      scheduleAbort(abortController, ctxSignal.reason)
-    }
-    if (abortReasons.has(invokeId)) {
-      scheduleAbort(abortController, abortReasons.get(invokeId))
-    }
+    const abortController = requestState.materialize(invokeId)
 
     const handlerOptions = options
       ? { ...options, abortController }
@@ -486,7 +493,7 @@ export function defineInvokeHandler<
 
     try {
       const response = await handler(payload as Req, handlerOptions) // Call the handler function with the request payload
-      ctx.emit(
+      await ctx.emit(
         { ...defineEventa(`${event.receiveEvent.id}-${invokeId}`), invokeType: event.receiveEvent.invokeType } as ReceiveEvent<ExtendableInvokeResponse<Res, InvocableEventContext<CtxExt, EOpts>>, M, IM>,
         { invokeId, content: response },
         options,
@@ -494,15 +501,20 @@ export function defineInvokeHandler<
     }
     catch (error) {
       // TODO: to error object
-      ctx.emit(
-        { ...defineEventa(`${event.receiveEventError.id}-${invokeId}`), invokeType: event.receiveEventError.invokeType } as ReceiveEventError<Res, Req, ResErr, ReqErr, M, IM>,
-        { invokeId, content: { error: error as ResErr } },
-        options,
-      )
+      try {
+        await ctx.emit(
+          { ...defineEventa(`${event.receiveEventError.id}-${invokeId}`), invokeType: event.receiveEventError.invokeType } as ReceiveEventError<Res, Req, ResErr, ReqErr, M, IM>,
+          { invokeId, content: { error: error as ResErr } },
+          options,
+        )
+      }
+      catch {
+        // The response transport is already unavailable; there is no remaining
+        // route on which to report its own send failure.
+      }
     }
     finally {
-      abortControllers.delete(invokeId)
-      abortReasons.delete(invokeId)
+      requestState.complete(invokeId)
     }
   }
 
@@ -515,23 +527,16 @@ export function defineInvokeHandler<
     }
 
     const invokeId = payload.body.invokeId
+    if (requestState.shouldIgnoreFrame(invokeId)) {
+      return
+    }
     if (payload.body.isReqStream) {
-      let controller = streamStates.get(invokeId)
-      if (!controller) {
-        let localController: ReadableStreamDefaultController<Req>
-        const reqStream = new ReadableStream<Req>({
-          start(c) {
-            localController = c
-          },
-        })
-
-        controller = localController!
-        streamStates.set(invokeId, controller)
+      const { controller, stream } = requestState.openRequestStream(invokeId)
+      if (stream) {
         // TODO: perhaps, can we correctly write type Req here?
-        handleInvoke(invokeId, reqStream as Req, options)
+        handleInvoke(invokeId, stream as Req, options)
       }
-
-      controller.enqueue(payload.body.content as Req)
+      requestState.pushRequestChunk(invokeId, controller, payload.body.content as Req)
       return
     }
 
@@ -547,26 +552,34 @@ export function defineInvokeHandler<
     }
 
     const invokeId = payload.body.invokeId
-    let controller = streamStates.get(invokeId)
-    if (!controller) {
-      let localController: ReadableStreamDefaultController<Req>
-      const reqStream = new ReadableStream<Req>({
-        start(c) {
-          localController = c
-        },
-      })
-
-      controller = localController!
-      streamStates.set(invokeId, controller)
-      // TODO: perhaps, can we correctly write type Req here?
-      handleInvoke(invokeId, reqStream as Req, options)
+    if (requestState.shouldIgnoreFrame(invokeId)) {
+      return
     }
-
-    controller.close()
-    streamStates.delete(invokeId)
+    const { controller, stream } = requestState.openRequestStream(invokeId)
+    if (stream) {
+      // TODO: perhaps, can we correctly write type Req here?
+      handleInvoke(invokeId, stream as Req, options)
+    }
+    requestState.endRequestStream(invokeId, controller)
   }
 
-  const onSendAbort = (payload: Eventa<NonNullable<SendEventAbort<Res, Req, ResErr, ReqErr, M, IM>['body']>>, options?: EOpts) => { // on: event_abort
+  const onSendError = (payload: Eventa<NonNullable<SendEventError<Res, Req, ResErr, ReqErr, M, IM>['body']>>, options?: EOpts) => {
+    if (!payload.body?.invokeId) {
+      return
+    }
+
+    const invokeId = payload.body.invokeId
+    if (requestState.shouldIgnoreFrame(invokeId)) {
+      return
+    }
+    const { controller, stream } = requestState.openRequestStream(invokeId)
+    if (stream) {
+      handleInvoke(invokeId, stream as Req, options)
+    }
+    requestState.errorRequestStream(invokeId, controller, payload.body.content)
+  }
+
+  const onSendAbort = (payload: Eventa<NonNullable<SendEventAbort<Res, Req, ResErr, ReqErr, M, IM>['body']>>, _options?: EOpts) => { // on: event_abort
     if (!payload.body) {
       return
     }
@@ -575,56 +588,22 @@ export function defineInvokeHandler<
     }
 
     const invokeId = payload.body.invokeId
-    const reason = payload.body.content
-    const abortController = abortControllers.get(invokeId)
-    if (!abortController) {
-      abortReasons.set(invokeId, reason)
-
-      let streamController = streamStates.get(invokeId)
-      if (!streamController) {
-        let localController: ReadableStreamDefaultController<Req>
-        const reqStream = new ReadableStream<Req>({
-          start(c) {
-            localController = c
-          },
-        })
-
-        streamController = localController!
-        streamStates.set(invokeId, streamController)
-        handleInvoke(invokeId, reqStream as Req, options)
-      }
-
-      streamController.error(createAbortError(reason))
-      streamStates.delete(invokeId)
-      return
-    }
-
-    scheduleAbort(abortController, reason)
-
-    const streamController = streamStates.get(invokeId)
-    if (streamController) {
-      streamController.error(createAbortError(reason))
-      streamStates.delete(invokeId)
-    }
+    requestState.rememberAbort(invokeId, payload.body.content)
   }
 
   const cleanup = () => {
-    ctxSignal.removeEventListener('abort', onCtxAbort)
+    requestState.dispose()
   }
 
-  const internalHandler = { onSend, onSendStreamEnd, onSendAbort, cleanup }
+  const internalHandler = { onSend, onSendError, onSendStreamEnd, onSendAbort, cleanup }
   handlers.set(handler, internalHandler)
 
   ctx.on(event.sendEvent, internalHandler.onSend)
+  ctx.on(event.sendEventError, internalHandler.onSendError)
   ctx.on(event.sendEventStreamEnd, internalHandler.onSendStreamEnd)
   ctx.on(event.sendEventAbort, internalHandler.onSendAbort)
 
-  return () => {
-    ctx.off(event.sendEvent, internalHandler.onSend)
-    ctx.off(event.sendEventStreamEnd, internalHandler.onSendStreamEnd)
-    ctx.off(event.sendEventAbort, internalHandler.onSendAbort)
-    internalHandler.cleanup()
-  }
+  return () => removeHandler(internalHandler)
 }
 
 /**
@@ -714,10 +693,14 @@ export function undefineInvokeHandler<
       return false
 
     ctx.off(event.sendEvent, internalHandler.onSend)
+    ctx.off(event.sendEventError, internalHandler.onSendError)
     ctx.off(event.sendEventStreamEnd, internalHandler.onSendStreamEnd)
     ctx.off(event.sendEventAbort, internalHandler.onSendAbort)
     internalHandler.cleanup()
-    ctx.invokeHandlers.delete(event.sendEvent.id)
+    handlers.delete(handler)
+    if (handlers.size === 0) {
+      ctx.invokeHandlers.delete(event.sendEvent.id)
+    }
 
     return true
   }
@@ -726,6 +709,7 @@ export function undefineInvokeHandler<
 
   for (const internalHandlers of handlers.values()) {
     ctx.off(event.sendEvent, internalHandlers.onSend)
+    ctx.off(event.sendEventError, internalHandlers.onSendError)
     ctx.off(event.sendEventStreamEnd, internalHandlers.onSendStreamEnd)
     ctx.off(event.sendEventAbort, internalHandlers.onSendAbort)
     internalHandlers.cleanup()

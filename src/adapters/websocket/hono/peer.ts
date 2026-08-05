@@ -1,12 +1,17 @@
 import type { WSEvents } from 'hono/ws'
 
+import type { CreateContextOptions } from '../../../context'
 import type { HonoWsInvocableEventContext, HonoWsRawEventOptions } from './shared'
 
 import { createContext as createBaseContext } from '../../../context'
-import { emitInboundMessage, forwardOutboundEvents } from './internal'
+import { and, EventaFlowDirection, matchBy } from '../../../eventa'
+import { createOutboundInner, restoreInner } from '../../internal'
+import { readMessageText } from './internal'
 import { wsConnectedEvent, wsDisconnectedEvent, wsErrorEvent } from './shared'
 
 export interface CreatePeerHooksOptions {
+  /** Delivery deduplication and hop policy for each created Context. */
+  context?: CreateContextOptions
   onContext?: (ctx: HonoWsInvocableEventContext) => void
 }
 
@@ -29,16 +34,24 @@ export interface PeerHooksResult {
  */
 export function createPeerHooks(options: CreatePeerHooksOptions = {}): PeerHooksResult {
   let context: HonoWsInvocableEventContext | undefined
-  let offOutbound: (() => void) | undefined
+  let stopSending: (() => void) | undefined
 
   const hooks: WSEvents = {
     onOpen(event, ws) {
-      const ctx = createBaseContext<any, HonoWsRawEventOptions>()
+      const ctx = createBaseContext<undefined, HonoWsRawEventOptions>(options.context)
       context = ctx
 
-      offOutbound = forwardOutboundEvents(ctx, data => ws.send(data))
+      stopSending = ctx.on(and(
+        matchBy(eventa => !('_flowDirection' in eventa) || !eventa._flowDirection || eventa._flowDirection === EventaFlowDirection.Outbound),
+        matchBy('*'),
+      ), (eventa) => {
+        const inner = createOutboundInner(eventa)
+        if (inner) {
+          ws.send(JSON.stringify(inner))
+        }
+      })
 
-      ctx.emit(wsConnectedEvent, undefined, { raw: { open: event } })
+      void ctx.emit(wsConnectedEvent, undefined, { raw: { open: event } }).catch(emitError => console.error('Failed to emit Hono WebSocket open event:', emitError))
       options.onContext?.(ctx)
     },
 
@@ -46,8 +59,18 @@ export function createPeerHooks(options: CreatePeerHooksOptions = {}): PeerHooks
       if (!context) {
         return
       }
+      const currentContext = context
 
-      void emitInboundMessage(context, event)
+      void readMessageText(event.data)
+        .then(message => restoreInner(JSON.parse(message)))
+        .then(
+          inner => currentContext.emit(inner.eventa, inner.eventa.body, { raw: { message: event } }),
+          (error) => {
+            console.error('Failed to parse WebSocket message:', error)
+            return currentContext.emit(wsErrorEvent, { error }, { raw: { message: event } })
+          },
+        )
+        .catch(emitError => console.error('Failed to emit Hono WebSocket message:', emitError))
     },
 
     onClose(event) {
@@ -55,11 +78,11 @@ export function createPeerHooks(options: CreatePeerHooksOptions = {}): PeerHooks
         return
       }
 
+      stopSending?.()
       context.abort(new Error('eventa: invoke cancelled, hono websocket disconnected'))
-      context.emit(wsDisconnectedEvent, undefined, { raw: { close: event } })
-      offOutbound?.()
+      void context.emit(wsDisconnectedEvent, undefined, { raw: { close: event } }).catch(emitError => console.error('Failed to emit Hono WebSocket close event:', emitError))
       context = undefined
-      offOutbound = undefined
+      stopSending = undefined
     },
 
     onError(event) {
@@ -67,8 +90,9 @@ export function createPeerHooks(options: CreatePeerHooksOptions = {}): PeerHooks
         return
       }
 
+      stopSending?.()
       context.abort(new Error('eventa: invoke cancelled, hono websocket error'))
-      context.emit(wsErrorEvent, { error: event }, { raw: { error: event } })
+      void context.emit(wsErrorEvent, { error: event }, { raw: { error: event } }).catch(emitError => console.error('Failed to emit Hono WebSocket error event:', emitError))
     },
   }
 

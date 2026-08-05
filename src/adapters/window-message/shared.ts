@@ -1,21 +1,14 @@
-import type { EventTag } from '../../eventa'
 import type { AdapterErrorPayload } from '../errors'
 
 import { defineEventa } from '../../eventa'
 
 export type { AdapterErrorKind, AdapterErrorPayload } from '../errors'
 
-export interface Payload<T> {
-  id: string
-  type: EventTag<any, any>
-  payload: T
-}
-
 export interface WindowMessageEnvelope<T> {
   __eventa: true
   channel: string
   sourceId: string
-  payload: Payload<T>
+  payload: T
 }
 
 /**

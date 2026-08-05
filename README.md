@@ -80,7 +80,7 @@ console.log(await someMethod(42)) // => { output: '42' }
 
 ### Channels
 
-Channels connect existing Eventa contexts. They forward ordinary events and the internal invoke events used by `defineInvoke`, so the same API works for event fan-out, RPC forwarding, and transport bridges such as iframe -> WebSocket -> server.
+Channels connect existing Eventa contexts into transport-transparent routing graphs. They carry ordinary events and every invoke or stream protocol frame, including cancellation.
 
 Use `pipeChannel(...)` for one-way forwarding:
 
@@ -109,14 +109,31 @@ import { linkChannel } from '@moeru/eventa'
 const link = linkChannel(iframeContext, websocketContext)
 ```
 
-`linkChannel(a, b, c)` creates a fully-connected bidirectional mesh. It is not a linear chain like `a <-> b <-> c`; every context is linked to every other context.
-
-Channels propagate context aborts by default. In a pipe, aborting the source aborts every target. In a link, aborting one context aborts the linked mesh. Set `propagateAbort: false` when contexts should share events but keep independent lifetimes:
+Variadic channels are ordered chains:
 
 ```ts
-linkChannel(iframeContext, websocketContext, {
-  propagateAbort: false,
-})
+pipeChannel(a, b, c) // a -> b -> c
+linkChannel(a, b, c) // a <-> b <-> c
+```
+
+There is no direct `a` to `c` edge. Create separate pipes for fan-out. Disposing a channel removes only its edges, and aborting a context does not abort linked contexts. Cancelling an individual invoke remains a routed protocol event and reaches its matching remote handler.
+
+Every `emit` is represented by a read-only `EventaInner<T>` with a `deliveryId`, `hopsRemaining`, and the application `eventa`. Adapters carry this value across transports, while business listeners continue to receive ordinary Eventa objects. Contexts use the stable delivery ID for bounded duplicate suppression across fan-out and cycles. The default cache holds up to 10,000 IDs for five minutes, and local emits start with 32 hops; these values can be configured through `createContext({ routing: ... })` or an adapter's nested `context` option.
+
+Contexts intentionally do not serialize concurrent `emit()` calls. Transport timing may therefore change their completion or arrival order, just as it can for browser messaging APIs. Invoke protocols impose ordering only within one request stream and one response stream: each chunk is sent before that stream's next chunk or end frame. Cancellation remains an independently routed control event and may overtake request data.
+
+For a gateway, link adjacent contexts at each runtime boundary. The transport itself joins its two endpoint contexts:
+
+```ts
+// Plugin iframe runtime
+linkChannel(iframeEventTargetContext, pluginBroadcastContext)
+
+// Desktop gateway runtime
+linkChannel(gatewayBroadcastContext, websocketContext)
+
+// The BroadcastChannel and WebSocket adapters carry EventaInner values
+// between runtimes. Register one effective invoke handler on the server.
+defineInvokeHandler(serverWebSocketContext, pluginMethod, handler)
 ```
 
 #### Transform and filter
@@ -127,7 +144,7 @@ Channel plugins run before an event is forwarded. A plugin can:
 - return a new event object to transform it
 - return `false` to drop it for that pipe
 
-Plugins receive the current event and a context object with `source`, `target`, and `direction`.
+Plugins receive the current event and a context object with `source`, `target`, `direction`, and a read-only `inner`. A transformed event keeps the same `deliveryId` and hop budget. Pipes leave `direction` undefined unless configured; the first linked pair keeps the established `left-to-right` / `right-to-left` values, while later pairs use `context-N-to-M`.
 
 ```ts
 import { defineChannelPlugin, pipeChannel } from '@moeru/eventa'

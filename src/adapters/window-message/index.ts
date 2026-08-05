@@ -1,24 +1,19 @@
-import type { EventContext } from '../../context'
-import type { DirectionalEventa, Eventa } from '../../eventa'
+import type { CreateContextOptions } from '../../context'
+import type { EventaInner } from '../../internal'
 import type { WindowMessageEnvelope } from './shared'
 
 import { createContext as createBaseContext } from '../../context'
-import { and, defineInboundEventa, defineOutboundEventa, EventaFlowDirection, matchBy } from '../../eventa'
+import { and, EventaFlowDirection, matchBy } from '../../eventa'
 import { toError } from '../errors'
-import { generatePayload, parsePayload } from './internal'
+import { createOutboundInner, restoreInner } from '../internal'
 import { errorEvent } from './shared'
 
 function withRemoval<K extends keyof WindowEventMap>(currentWindow: Window, type: K, listener: (event: WindowEventMap[K]) => void) {
   currentWindow.addEventListener(type, listener)
-
-  return {
-    remove: () => {
-      currentWindow.removeEventListener(type, listener)
-    },
-  }
+  return { remove: () => currentWindow.removeEventListener(type, listener) }
 }
 
-function isEnvelope(value: unknown, channel: string): value is WindowMessageEnvelope<Eventa<any>> {
+function isEnvelope(value: unknown, channel: string): value is WindowMessageEnvelope<EventaInner> {
   return typeof value === 'object'
     && value !== null
     && '__eventa' in value
@@ -28,22 +23,18 @@ function isEnvelope(value: unknown, channel: string): value is WindowMessageEnve
     && 'sourceId' in value
     && typeof value.sourceId === 'string'
     && 'payload' in value
-    && typeof value.payload === 'object'
-    && value.payload !== null
 }
 
 function matchOrigin(expectedOrigin: string | ((origin: string) => boolean), origin: string) {
-  if (typeof expectedOrigin === 'function') {
-    return expectedOrigin(origin)
-  }
-
-  return expectedOrigin === origin
+  return typeof expectedOrigin === 'function' ? expectedOrigin(origin) : expectedOrigin === origin
 }
 
+/** Creates an Eventa Context backed by a window-message channel. */
 export interface WindowMessageAdapterOptions {
   channel: string
   currentWindow: Window
   targetWindow: () => Window | null | undefined
+  context?: CreateContextOptions
   expectedSource?: () => MessageEventSource | null | undefined
   targetOrigin?: string
   expectedOrigin?: string | ((origin: string) => boolean)
@@ -52,33 +43,30 @@ export interface WindowMessageAdapterOptions {
   messageErrorEvents?: boolean
 }
 
+/** Raw window-message metadata exposed to Eventa listeners. */
+export interface WindowMessageEmitOptions {
+  raw: { message?: MessageEvent, messageError?: MessageEvent, error?: unknown }
+}
+
 export function createContext(options: WindowMessageAdapterOptions) {
-  const ctx = createBaseContext() as EventContext<any, { raw: { message?: MessageEvent, messageError?: MessageEvent, error?: unknown } }>
+  const ctx = createBaseContext<undefined, WindowMessageEmitOptions>(options.context)
   const sourceId = crypto.randomUUID()
-
-  const {
-    messageEvents: message = true,
-    messageErrorEvents: messageError = true,
-  } = options
-
+  const { messageEvents: message = true, messageErrorEvents: messageError = true } = options
   const cleanupRemoval: Array<{ remove: () => void }> = []
-
-  ctx.on(and(
-    matchBy((e: DirectionalEventa<any>) => e._flowDirection === EventaFlowDirection.Outbound || !e._flowDirection),
+  const stopSending = ctx.on(and(
+    matchBy(event => !('_flowDirection' in event) || !event._flowDirection || event._flowDirection === EventaFlowDirection.Outbound),
     matchBy('*'),
   ), (event) => {
-    const targetWindow = options.targetWindow()
-    if (!targetWindow) {
+    const inner = createOutboundInner(event)
+    if (!inner) {
       return
     }
-
-    const payload = generatePayload(event.id, { ...defineOutboundEventa(event.type), ...event })
-    targetWindow.postMessage({
+    options.targetWindow()?.postMessage({
       __eventa: true,
       channel: options.channel,
       sourceId,
-      payload,
-    } satisfies WindowMessageEnvelope<Eventa<any>>, options.targetOrigin ?? '*')
+      payload: inner,
+    } satisfies WindowMessageEnvelope<EventaInner>, options.targetOrigin ?? '*')
   })
 
   if (message) {
@@ -86,44 +74,38 @@ export function createContext(options: WindowMessageAdapterOptions) {
       if (!isEnvelope(event.data, options.channel)) {
         return
       }
-
       const expectedSource = options.expectedSource?.()
       if (expectedSource && event.source !== expectedSource) {
         return
       }
-
       if (options.expectedOrigin && !matchOrigin(options.expectedOrigin, event.origin)) {
         return
       }
-
-      if (event.data.sourceId === sourceId) {
-        return
-      }
-
-      if (options.acceptMessage && !options.acceptMessage(event)) {
+      if (event.data.sourceId === sourceId || (options.acceptMessage && !options.acceptMessage(event))) {
         return
       }
 
       try {
-        const { type, payload } = parsePayload<Eventa<any>>(event.data.payload)
-        ctx.emit(defineInboundEventa(type), payload.body, { raw: { message: event } })
+        const inner = restoreInner(event.data.payload)
+        void ctx.emit(inner.eventa, inner.eventa.body, { raw: { message: event } }).catch(emitError => console.error('Failed to emit window message:', emitError))
       }
       catch (error) {
         console.error('Failed to parse window message:', error)
-        ctx.emit(errorEvent, { kind: 'parse', error: toError(error, 'eventa: window message parse error') }, { raw: { error } })
+        void ctx.emit(errorEvent, { kind: 'parse', error: toError(error, 'eventa: window message parse error') }, { raw: { error } }).catch(emitError => console.error('Failed to emit window-message parse error:', emitError))
       }
     }))
   }
 
   if (messageError) {
     cleanupRemoval.push(withRemoval(options.currentWindow, 'messageerror', (event) => {
-      ctx.emit(errorEvent, { kind: 'messageerror', error: toError(event, 'eventa: window messageerror'), message: event }, { raw: { messageError: event } })
+      void ctx.emit(errorEvent, { kind: 'messageerror', error: toError(event, 'eventa: window messageerror'), message: event }, { raw: { messageError: event } }).catch(emitError => console.error('Failed to emit window message error:', emitError))
     }))
   }
 
   return {
     context: ctx,
     dispose: (reason?: unknown) => {
+      stopSending()
       ctx.abort(reason ?? new Error('eventa: invoke cancelled, window message adapter disposed'))
       cleanupRemoval.forEach(removal => removal.remove())
     },

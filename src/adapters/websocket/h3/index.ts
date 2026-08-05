@@ -1,4 +1,5 @@
 export { createGlobalContext } from './global'
+export type { H3GlobalAdapterOptions } from './global'
 export {
   wsErrorEvent as global,
   wsConnectedEvent as globalWsConnectedEvent,
@@ -10,4 +11,4 @@ export {
   wsDisconnectedEvent as peerWsDisconnectedEvent,
   wsErrorEvent as peerWsErrorEvent,
 } from './peer'
-export type { PeerContext } from './peer'
+export type { H3PeerAdapterOptions, PeerContext } from './peer'

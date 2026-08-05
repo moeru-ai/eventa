@@ -1,72 +1,66 @@
 /* eslint-disable no-restricted-globals */
-import type { EventContext } from '../../../context'
-import type { DirectionalEventa, Eventa } from '../../../eventa'
+import type { CreateContextOptions, EventContext } from '../../../context'
+import type { WorkerContextExtensions } from '../shared'
 
 import { createContext as createBaseContext } from '../../../context'
-import { and, defineInboundEventa, defineOutboundEventa, EventaFlowDirection, matchBy } from '../../../eventa'
+import { and, EventaFlowDirection, matchBy } from '../../../eventa'
 import { toError } from '../../errors'
-import { generateWorkerPayload, parseWorkerPayload } from '../internal'
-import { isWorkerEventa, normalizeOnListenerParameters, workerErrorEvent } from '../shared'
+import { createOutboundInner } from '../../internal'
+import { createWorkerInnerEventa, restoreInner } from '../internal'
+import { workerErrorEvent } from '../shared'
 
-export function createContext(options?: {
+/** Creates an Eventa Context backed by a worker-global message port. */
+export interface WebWorkerSelfAdapterOptions {
+  /** Delivery deduplication and hop policy for the created Context. */
+  context?: CreateContextOptions
+  /** Worker-compatible port used for messaging. @default self */
   messagePort?: Omit<Worker, 'close' | 'start'>
-}) {
-  const {
-    messagePort = self,
-  } = options || {}
+}
 
-  const ctx = createBaseContext() as EventContext<
-    {
-      invokeRequest?: { transfer?: Transferable[] }
-      invokeResponse?: { transfer?: Transferable[] }
-    },
-    {
-      raw: { event?: any, error?: string | Event }
-      transfer?: Transferable[]
-    }
-  >
+/** Worker-global metadata and transferables available while emitting an Eventa. */
+export interface WebWorkerSelfEmitOptions {
+  raw: { event?: unknown, error?: string | Event }
+  transfer?: Transferable[]
+}
 
-  ctx.on(and(
-    matchBy((e: DirectionalEventa<any>) => e._flowDirection === EventaFlowDirection.Outbound || !e._flowDirection),
+export function createContext(options?: WebWorkerSelfAdapterOptions) {
+  const messagePort = options?.messagePort ?? self
+  const ctx = createBaseContext<WorkerContextExtensions, WebWorkerSelfEmitOptions>(options?.context) as EventContext<WorkerContextExtensions, WebWorkerSelfEmitOptions>
+  const stopSending = ctx.on(and(
+    matchBy(event => !('_flowDirection' in event) || !event._flowDirection || event._flowDirection === EventaFlowDirection.Outbound),
     matchBy('*'),
-  ), (event, options) => {
-    const { body, transfer } = normalizeOnListenerParameters(event, options)
-    const data = generateWorkerPayload(event.id, { ...defineOutboundEventa(event.type), ...event, body })
-    if (transfer != null) {
-      messagePort.postMessage(data, { transfer })
+  ), (event, emitOptions) => {
+    const inner = createOutboundInner(event)
+    if (!inner) {
       return
     }
-
-    messagePort.postMessage(data)
+    const outgoing = createWorkerInnerEventa(inner, emitOptions)
+    if (outgoing.transfer != null) {
+      messagePort.postMessage(outgoing.inner, { transfer: outgoing.transfer })
+      return
+    }
+    messagePort.postMessage(outgoing.inner)
   })
 
-  self.onerror = (event) => {
-    // Fatal worker-side error. Abort lifetime so any in-flight invoke rejects;
-    // emit the business event for non-invoke listeners.
-    const error = toError(event, 'eventa: invoke cancelled, webworker self error')
-    ctx.abort(error)
-    ctx.emit(workerErrorEvent, { kind: 'fatal', error }, { raw: { error: event } })
-  }
-
-  self.onmessage = (event) => {
+  messagePort.onmessage = (event: MessageEvent) => {
     try {
-      const { type, payload } = parseWorkerPayload<Eventa<any>>(event.data)
-      if (!isWorkerEventa(payload)) {
-        ctx.emit(defineInboundEventa(type), payload.body, { raw: { event } })
-      }
-      else {
-        ctx.emit(defineInboundEventa(type), { message: payload.body }, { raw: { event } })
-      }
+      const inner = restoreInner(event.data)
+      void ctx.emit(inner.eventa, inner.eventa.body, { raw: { event } }).catch(emitError => console.error('Failed to emit WebWorker message:', emitError))
     }
     catch (error) {
       console.error('Failed to parse WebWorker message:', error)
-      ctx.emit(workerErrorEvent, { kind: 'parse', error: toError(error, 'eventa: webworker message parse error') }, { raw: { event } })
+      void ctx.emit(workerErrorEvent, { kind: 'parse', error: toError(error, 'eventa: webworker message parse error') }, { raw: { event } }).catch(emitError => console.error('Failed to emit WebWorker parse error:', emitError))
     }
   }
-
-  return {
-    context: ctx,
+  messagePort.onerror = (event: ErrorEvent) => {
+    // A fatal worker-side error terminates invokes owned by this context.
+    const error = toError(event, 'eventa: invoke cancelled, webworker self error')
+    stopSending()
+    ctx.abort(error)
+    void ctx.emit(workerErrorEvent, { kind: 'fatal', error }, { raw: { error: event } }).catch(emitError => console.error('Failed to emit WebWorker error:', emitError))
   }
+
+  return { context: ctx }
 }
 
 export { workerErrorEvent } from '../shared'

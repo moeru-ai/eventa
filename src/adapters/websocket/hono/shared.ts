@@ -23,5 +23,5 @@ export interface HonoWsRawEventOptions {
   }
 }
 
-export type HonoWsEventContext = EventContext<any, HonoWsRawEventOptions>
-export type HonoWsInvocableEventContext = InvocableEventContext<any, HonoWsRawEventOptions>
+export type HonoWsEventContext = EventContext<undefined, HonoWsRawEventOptions>
+export type HonoWsInvocableEventContext = InvocableEventContext<undefined, HonoWsRawEventOptions>

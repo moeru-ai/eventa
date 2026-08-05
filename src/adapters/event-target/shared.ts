@@ -1,15 +1,8 @@
-import type { EventTag } from '../../eventa'
 import type { AdapterErrorPayload } from '../errors'
 
 import { defineEventa } from '../../eventa'
 
 export type { AdapterErrorKind, AdapterErrorPayload } from '../errors'
-
-export interface CustomEventDetail<T> {
-  id: string
-  type: EventTag<any, any>
-  payload: T
-}
 
 /**
  * Emitted by the EventTarget adapter when an inbound event fails to parse

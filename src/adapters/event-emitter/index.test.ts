@@ -2,13 +2,14 @@
 /// <reference types="vite/client" />
 
 import type { Eventa } from '../../eventa'
+import type { EventaInner } from '../../internal'
 
 import { EventEmitter } from 'node:events'
 
 import { describe, expect, it } from 'vitest'
 
 import { createContext } from '.'
-import { defineEventa, defineInboundEventa } from '../../eventa'
+import { defineEventa } from '../../eventa'
 import { defineInvoke, defineInvokeHandler } from '../../invoke'
 import { defineInvokeEventa } from '../../invoke-shared'
 import { createUntilTriggeredOnce } from '../../utils'
@@ -22,7 +23,12 @@ describe('event target', async () => {
     const { onceTriggered, wrapper } = createUntilTriggeredOnce((event: Eventa, options) => ({ eventa: event, options }))
 
     ctx.on(eventa, wrapper)
-    ctx.emit(defineInboundEventa(eventa.id), { message: 'Hello, Event Target!' }, { raw: { event: { message: 'Hello, Event Target!' } } }) // emit: event_trigger
+    const inbound = {
+      deliveryId: 'event-emitter-inbound-delivery',
+      hopsRemaining: 32,
+      eventa: { ...eventa, body: { message: 'Hello, Event Target!' } },
+    } satisfies EventaInner<{ message: string }>
+    eventTarget.emit('message', inbound)
     const event = await onceTriggered
     expect(event.eventa.body).toEqual({ message: 'Hello, Event Target!' })
     expect(event.options).toBeDefined()

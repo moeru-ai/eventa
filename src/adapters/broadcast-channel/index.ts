@@ -1,9 +1,8 @@
-import type { EventContext } from '../../context'
-import type { DirectionalEventa, Eventa } from '../../eventa'
+import type { CreateContextOptions } from '../../context'
 
 import { createContext as createBaseContext } from '../../context'
-import { and, defineInboundEventa, defineOutboundEventa, EventaFlowDirection, matchBy } from '../../eventa'
-import { generatePayload, parsePayload } from './internal'
+import { and, EventaFlowDirection, matchBy } from '../../eventa'
+import { createOutboundInner, restoreInner } from '../internal'
 import { errorEvent } from './shared'
 
 function withRemoval<K extends keyof BroadcastChannelEventMap>(channel: BroadcastChannel, type: K, listener: (event: BroadcastChannelEventMap[K]) => void) {
@@ -16,7 +15,10 @@ function withRemoval<K extends keyof BroadcastChannelEventMap>(channel: Broadcas
   }
 }
 
+/** Creates an Eventa Context backed by a BroadcastChannel. */
 export interface BroadcastChannelAdapterOptions {
+  /** Delivery deduplication and hop policy for the created Context. */
+  context?: CreateContextOptions
   /**
    * Whether to listen to `message` events.
    * @default true
@@ -34,46 +36,53 @@ export interface BroadcastChannelAdapterOptions {
   closeOnDispose?: boolean
 }
 
-export function createContext(channel: BroadcastChannel, options?: BroadcastChannelAdapterOptions) {
-  const ctx = createBaseContext() as EventContext<any, { raw: { message?: MessageEvent, messageError?: MessageEvent, error?: unknown } }>
+/** Raw BroadcastChannel metadata exposed to Eventa listeners. */
+export interface BroadcastChannelEmitOptions {
+  raw: { message?: MessageEvent, messageError?: MessageEvent, error?: unknown }
+}
 
+export function createContext(channel: BroadcastChannel, options?: BroadcastChannelAdapterOptions) {
+  const ctx = createBaseContext<undefined, BroadcastChannelEmitOptions>(options?.context)
   const {
     messageEvents: message = true,
     messageErrorEvents: messageError = true,
     closeOnDispose = false,
   } = options || {}
-
   const cleanupRemoval: Array<{ remove: () => void }> = []
-
-  ctx.on(and(matchBy((e: DirectionalEventa<any>) => e._flowDirection === EventaFlowDirection.Outbound || !e._flowDirection), matchBy('*')), (event) => {
-    const message = generatePayload(event.id, { ...defineOutboundEventa(event.type), ...event })
-    channel.postMessage(message)
+  const stopSending = ctx.on(and(
+    matchBy(event => !('_flowDirection' in event) || !event._flowDirection || event._flowDirection === EventaFlowDirection.Outbound),
+    matchBy('*'),
+  ), (event) => {
+    const inner = createOutboundInner(event)
+    if (inner) {
+      channel.postMessage(inner)
+    }
   })
 
   if (message) {
     cleanupRemoval.push(withRemoval(channel, 'message', (event) => {
       try {
-        const { type, payload } = parsePayload<Eventa<any>>(event.data)
-        ctx.emit(defineInboundEventa(type), payload.body, { raw: { message: event } })
+        const inner = restoreInner(event.data)
+        void ctx.emit(inner.eventa, inner.eventa.body, { raw: { message: event } }).catch(emitError => console.error('Failed to emit BroadcastChannel message:', emitError))
       }
       catch (error) {
         console.error('Failed to parse BroadcastChannel message:', error)
-        ctx.emit(errorEvent, { error }, { raw: { error } })
+        void ctx.emit(errorEvent, { error }, { raw: { error } }).catch(emitError => console.error('Failed to emit BroadcastChannel parse error:', emitError))
       }
     }))
   }
 
   if (messageError) {
     cleanupRemoval.push(withRemoval(channel, 'messageerror', (event) => {
-      ctx.emit(errorEvent, { error: event }, { raw: { messageError: event } })
+      void ctx.emit(errorEvent, { error: event }, { raw: { messageError: event } }).catch(emitError => console.error('Failed to emit BroadcastChannel message error:', emitError))
     }))
   }
 
   return {
     context: ctx,
     dispose: (reason?: unknown) => {
-      // Cascade-cancel any in-flight `defineInvoke(...)` so callers don't hang
-      // on a torn-down channel (especially when `closeOnDispose: true`).
+      stopSending()
+      // Reject pending invokes before removing listeners or closing the channel.
       ctx.abort(reason ?? new Error('eventa: invoke cancelled, BroadcastChannel disposed'))
       cleanupRemoval.forEach(removal => removal.remove())
       if (closeOnDispose) {
