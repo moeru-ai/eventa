@@ -471,12 +471,24 @@ Eventa comes with various adapters for common use scenarios across browsers and 
       const chatEvents = defineInvokeEventa<{ message: string }, { text: string }>('chat:send')
       export const sendChat = defineInvoke(wsCtx, chatEvents)
       ```
-  2. Listen for connection lifecycle events to update UI state or retry logic:
+  2. Listen for connection lifecycle events to update UI state or retry logic.
+     Eventa closes an incompatible connection with code `4002` after its first
+     invalid frame, so the reconnect owner should stop retrying and prompt the
+     user to upgrade:
      ```ts
+     import { isUnsupportedProtocolClose } from '@moeru/eventa/adapters/websocket'
      import { wsConnectedEvent, wsDisconnectedEvent } from '@moeru/eventa/adapters/websocket/native'
 
      wsCtx.on(wsConnectedEvent, () => console.log('connected'))
-     wsCtx.on(wsDisconnectedEvent, () => console.log('disconnected'))
+     wsCtx.on(wsDisconnectedEvent, (event) => {
+       if (event.body && isUnsupportedProtocolClose(event.body.code)) {
+         stopReconnect()
+         showUpgradePrompt()
+         return
+       }
+
+       console.log('disconnected')
+     })
      ```
   3. Pair the client with either the H3 global or peer adapter on the server for a full RPC channel (`src/adapters/websocket/h3/*.test.ts`).
 

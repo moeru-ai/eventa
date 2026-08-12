@@ -7,12 +7,59 @@ import { defineWebSocketHandler, H3, serve } from 'h3'
 import { describe, expect, it, vi } from 'vitest'
 
 import { createContext, wsConnectedEvent, wsDisconnectedEvent, wsErrorEvent } from '.'
+import { isUnsupportedProtocolClose, WS_UNSUPPORTED_PROTOCOL_CLOSE_CODE, WS_UNSUPPORTED_PROTOCOL_CLOSE_REASON } from '..'
 import { defineEventa } from '../../../eventa'
 import { defineInvoke } from '../../../invoke'
 import { defineInvokeEventa } from '../../../invoke-shared'
 import { createUntil, randomBetween } from '../../../utils'
 
 describe('browser websocket adapter', () => {
+  it('closes once and aborts the context after an unsupported protocol frame', () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => void 0)
+    const close = vi.fn()
+    const wsConn = {
+      close,
+      send: vi.fn(),
+      url: 'ws://eventa.test',
+    } as unknown as WebSocket
+    const { context } = createContext(wsConn)
+
+    wsConn.onmessage?.({ data: '{"type":"legacy"}' } as MessageEvent)
+    wsConn.onmessage?.({ data: '{"type":"legacy-again"}' } as MessageEvent)
+
+    expect(close).toHaveBeenCalledOnce()
+    expect(close).toHaveBeenCalledWith(
+      WS_UNSUPPORTED_PROTOCOL_CLOSE_CODE,
+      WS_UNSUPPORTED_PROTOCOL_CLOSE_REASON,
+    )
+    expect(context.signal.aborted).toBe(true)
+    expect(consoleError).toHaveBeenCalledOnce()
+    consoleError.mockRestore()
+  })
+
+  it('exposes close details so reconnect owners can stop on protocol mismatch', () => {
+    const wsConn = {
+      send: vi.fn(),
+      url: 'ws://eventa.test',
+    } as unknown as WebSocket
+    const { context } = createContext(wsConn)
+    const onDisconnect = vi.fn()
+    context.on(wsDisconnectedEvent, onDisconnect)
+
+    wsConn.onclose?.({
+      code: WS_UNSUPPORTED_PROTOCOL_CLOSE_CODE,
+      reason: WS_UNSUPPORTED_PROTOCOL_CLOSE_REASON,
+    } as CloseEvent)
+
+    expect(onDisconnect).toHaveBeenCalledOnce()
+    expect(onDisconnect.mock.calls[0][0].body).toEqual({
+      code: WS_UNSUPPORTED_PROTOCOL_CLOSE_CODE,
+      reason: WS_UNSUPPORTED_PROTOCOL_CLOSE_REASON,
+      url: 'ws://eventa.test',
+    })
+    expect(isUnsupportedProtocolClose(onDisconnect.mock.calls[0][0].body.code)).toBe(true)
+  })
+
   it('stops sending before publishing a close event', () => {
     const send = vi.fn()
     const wsConn = {

@@ -5,6 +5,7 @@ import type { CreateContextOptions, EventContext } from '../../../context'
 import { createContext as createBaseContext } from '../../../context'
 import { and, defineEventa, EventaFlowDirection, matchBy } from '../../../eventa'
 import { createOutboundInner, restoreInner } from '../../internal'
+import { createWebSocketProtocolGuard } from '../protocol'
 
 export const wsConnectedEvent = defineEventa<{ id: string }>('eventa:adapters:websocket-peer:connected')
 export const wsDisconnectedEvent = defineEventa<{ id: string }>('eventa:adapters:websocket-peer:disconnected')
@@ -32,6 +33,14 @@ export function createPeerContext(peer: Peer, options?: H3PeerAdapterOptions): {
       peer.send(JSON.stringify(inner))
     }
   })
+  const protocolGuard = createWebSocketProtocolGuard<Message>({
+    close: (code, reason) => peer.close(code, reason),
+    onRejected(error, message) {
+      stopSending()
+      void ctx.emit(wsErrorEvent, { error }, { raw: { message } }).catch(emitError => console.error('Failed to emit WebSocket peer parse error:', emitError))
+      ctx.abort(new Error('eventa: invoke cancelled, unsupported websocket protocol'))
+    },
+  })
 
   return {
     hooks: {
@@ -40,14 +49,15 @@ export function createPeerContext(peer: Peer, options?: H3PeerAdapterOptions): {
         if (incomingPeer.id !== peerId) {
           return
         }
+        if (protocolGuard.rejected) {
+          return
+        }
         try {
           const inner = restoreInner(JSON.parse(message.text()))
           void ctx.emit(inner.eventa, inner.eventa.body, { raw: { message } }).catch(emitError => console.error('Failed to emit WebSocket peer message:', emitError))
         }
         catch (error) {
-          // Per-message parse failures are recoverable and do not end the peer lifetime.
-          console.error('Failed to parse WebSocket message:', error)
-          void ctx.emit(wsErrorEvent, { error }, { raw: { message } }).catch(emitError => console.error('Failed to emit WebSocket peer parse error:', emitError))
+          protocolGuard.reject(error, message)
         }
       },
       close(incomingPeer, details) {
