@@ -141,6 +141,9 @@ describe('web workers', async () => {
       expect(postMessage.mock.calls[0][0].eventa).toHaveProperty('id', 'worker-transfer')
       expect(postMessage.mock.calls[0][0].eventa).toHaveProperty('type', 'event')
       expect(postMessage.mock.calls[0][0].eventa).toHaveProperty('_workerTransfer', true)
+      expect(postMessage.mock.calls[0][0]).toHaveProperty('id', postMessage.mock.calls[0][0].deliveryId)
+      expect(postMessage.mock.calls[0][0]).toHaveProperty('type', 'worker-transfer')
+      expect(postMessage.mock.calls[0][0].payload).toEqual(postMessage.mock.calls[0][0].eventa)
 
       expect(postMessage.mock.calls[0][1]).toHaveProperty('transfer')
       expect((postMessage.mock.calls[0][1].transfer as Transferable[]).length).toBe(1)

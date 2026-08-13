@@ -1,6 +1,6 @@
 import type { EventaInner } from '../../internal'
 
-import { restoreInner as restoreAdapterInner } from '../internal'
+import { createAdapterInner, restoreInner as restoreAdapterInner } from '../internal'
 import { isWorkerEventa, normalizeOnListenerParameters } from './shared'
 
 /**
@@ -20,7 +20,7 @@ export function createWorkerInnerEventa<Transfer = Transferable>(
   const eventa = { ...inner.eventa, body: clonedBody }
   const { body, transfer } = normalizeOnListenerParameters<Transfer>(eventa, options)
   return {
-    inner: { ...inner, eventa: { ...eventa, body } },
+    inner: createAdapterInner({ ...inner, eventa: { ...eventa, body } }),
     transfer,
   }
 }
