@@ -51,6 +51,11 @@
       "import": "./dist/adapters/event-target/index.mjs",
       "default": "./dist/adapters/event-target/index.mjs"
     },
+    "./adapters/unix-socket": {
+      "type": "./dist/adapters/unix-socket/index.mts",
+      "import": "./dist/adapters/unix-socket/index.mjs",
+      "default": "./dist/adapters/unix-socket/index.mjs"
+    },
     "./adapters/window-message": {
       "type": "./dist/adapters/window-message/index.mts",
       "import": "./dist/adapters/window-message/index.mjs",
