@@ -4,7 +4,6 @@ import type { CreateContextOptions } from '../../context'
 
 import { createContext as createBaseContext } from '../../context'
 import { and, EventaFlowDirection, matchBy } from '../../eventa'
-import { createOnceReporter } from '../errors'
 import { createOutboundInner, restoreInner } from '../internal'
 import { errorEvent } from './shared'
 
@@ -33,7 +32,6 @@ export function createContext(ipcRenderer: IpcRenderer, options?: ElectronRender
     extraListeners = {},
   } = options || {}
   const cleanupRemoval: Array<{ remove: () => void }> = []
-  const reportParseError = createOnceReporter((error: unknown) => console.error('Failed to parse IpcRenderer message:', error))
   const stopSending = ctx.on(and(
     matchBy(event => !('_flowDirection' in event) || !event._flowDirection || event._flowDirection === EventaFlowDirection.Outbound),
     matchBy('*'),
@@ -63,7 +61,7 @@ export function createContext(ipcRenderer: IpcRenderer, options?: ElectronRender
       void ctx.emit(inner.eventa, inner.eventa.body, { raw: { ipcRendererEvent, event } }).catch(emitError => console.error('Failed to emit IpcRenderer message:', emitError))
     }
     catch (error) {
-      reportParseError(error)
+      console.error('Failed to parse IpcRenderer message:', error)
       void ctx.emit(errorEvent, { error }, { raw: { ipcRendererEvent, event } }).catch(emitError => console.error('Failed to emit IpcRenderer parse error:', emitError))
     }
   }

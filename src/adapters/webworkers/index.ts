@@ -3,7 +3,7 @@ import type { WorkerContextExtensions } from './shared'
 
 import { createContext as createBaseContext } from '../../context'
 import { and, EventaFlowDirection, matchBy } from '../../eventa'
-import { createOnceReporter, toError } from '../errors'
+import { toError } from '../errors'
 import { createOutboundInner } from '../internal'
 import { createWorkerInnerEventa, restoreInner } from './internal'
 import { workerErrorEvent } from './shared'
@@ -22,7 +22,6 @@ export interface WebWorkerEmitOptions {
 
 export function createContext(worker: Worker, options?: WebWorkerAdapterOptions) {
   const ctx = createBaseContext<WorkerContextExtensions, WebWorkerEmitOptions>(options?.context)
-  const reportParseError = createOnceReporter((error: unknown) => console.error('Failed to parse WebWorker message:', error))
   const stopSending = ctx.on(and(
     matchBy(event => !('_flowDirection' in event) || !event._flowDirection || event._flowDirection === EventaFlowDirection.Outbound),
     matchBy('*'),
@@ -45,7 +44,7 @@ export function createContext(worker: Worker, options?: WebWorkerAdapterOptions)
       void ctx.emit(inner.eventa, inner.eventa.body, { raw: { message: event } }).catch(emitError => console.error('Failed to emit WebWorker message:', emitError))
     }
     catch (error) {
-      reportParseError(error)
+      console.error('Failed to parse WebWorker message:', error)
       void ctx.emit(workerErrorEvent, { kind: 'parse', error: toError(error, 'eventa: webworker message parse error') }, { raw: { message: event } }).catch(emitError => console.error('Failed to emit WebWorker parse error:', emitError))
     }
   }

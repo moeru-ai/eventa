@@ -2,7 +2,6 @@ import type { CreateContextOptions } from '../../context'
 
 import { createContext as createBaseContext } from '../../context'
 import { and, EventaFlowDirection, matchBy } from '../../eventa'
-import { createOnceReporter } from '../errors'
 import { createOutboundInner, restoreInner } from '../internal'
 import { errorEvent } from './shared'
 
@@ -50,7 +49,6 @@ export function createContext(channel: BroadcastChannel, options?: BroadcastChan
     closeOnDispose = false,
   } = options || {}
   const cleanupRemoval: Array<{ remove: () => void }> = []
-  const reportParseError = createOnceReporter((error: unknown) => console.error('Failed to parse BroadcastChannel message:', error))
   const stopSending = ctx.on(and(
     matchBy(event => !('_flowDirection' in event) || !event._flowDirection || event._flowDirection === EventaFlowDirection.Outbound),
     matchBy('*'),
@@ -68,7 +66,7 @@ export function createContext(channel: BroadcastChannel, options?: BroadcastChan
         void ctx.emit(inner.eventa, inner.eventa.body, { raw: { message: event } }).catch(emitError => console.error('Failed to emit BroadcastChannel message:', emitError))
       }
       catch (error) {
-        reportParseError(error)
+        console.error('Failed to parse BroadcastChannel message:', error)
         void ctx.emit(errorEvent, { error }, { raw: { error } }).catch(emitError => console.error('Failed to emit BroadcastChannel parse error:', emitError))
       }
     }))

@@ -2,7 +2,7 @@ import type { CreateContextOptions } from '../../context'
 
 import { createContext as createBaseContext } from '../../context'
 import { and, EventaFlowDirection, EventaType, matchBy } from '../../eventa'
-import { createOnceReporter, toError } from '../errors'
+import { toError } from '../errors'
 import { createOutboundInner, restoreInner } from '../internal'
 import { adapterErrorEvent } from './shared'
 
@@ -36,7 +36,6 @@ export function createContext(eventTarget: EventTarget, options?: EventTargetAda
     extraListeners = {},
   } = options || {}
   const cleanupRemoval: Array<{ remove: () => void }> = []
-  const reportParseError = createOnceReporter((error: unknown) => console.error('Failed to parse EventTarget message:', error))
   const stopSending = ctx.on(and(
     matchBy(event => !('_flowDirection' in event) || !event._flowDirection || event._flowDirection === EventaFlowDirection.Outbound),
     matchBy('*'),
@@ -59,7 +58,7 @@ export function createContext(eventTarget: EventTarget, options?: EventTargetAda
         void ctx.emit(inner.eventa, inner.eventa.body, { raw: { event } }).catch(emitError => console.error('Failed to emit EventTarget message:', emitError))
       }
       catch (error) {
-        reportParseError(error)
+        console.error('Failed to parse EventTarget message:', error)
         void ctx.emit(adapterErrorEvent, { kind: 'parse', error: toError(error, 'eventa: EventTarget message parse error') }, { raw: { event } }).catch(emitError => console.error('Failed to emit EventTarget parse error:', emitError))
       }
     }))

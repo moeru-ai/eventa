@@ -1,24 +1,11 @@
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 
-import { createOnceReporter, toError } from './errors'
+import { toError } from './errors'
 
 // ErrorEvent is a browser-only global; the instanceof-ErrorEvent path is
 // covered in errors.browser.test.ts. These cases run in the node project and
 // exercise the Error, plain-object, and fallback branches.
 describe('adapters/errors', () => {
-  describe('createOnceReporter', () => {
-    it('reports only the first failure from one adapter context', () => {
-      const report = vi.fn()
-      const reportOnce = createOnceReporter(report)
-
-      reportOnce('first')
-      reportOnce('second')
-
-      expect(report).toHaveBeenCalledOnce()
-      expect(report).toHaveBeenCalledWith('first')
-    })
-  })
-
   describe('toError', () => {
     it('returns the same Error instance when given an Error', () => {
       const original = new TypeError('boom')

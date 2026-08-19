@@ -7,7 +7,7 @@ import { parentPort } from 'node:worker_threads'
 
 import { createContext as createBaseContext } from '../../../context'
 import { and, EventaFlowDirection, matchBy } from '../../../eventa'
-import { createOnceReporter, toError } from '../../errors'
+import { toError } from '../../errors'
 import { createOutboundInner } from '../../internal'
 import { createWorkerInnerEventa, restoreInner } from '../../webworkers/internal'
 import { workerErrorEvent } from '../../webworkers/shared'
@@ -33,7 +33,6 @@ export function createContext(options?: WorkerThreadSelfAdapterOptions) {
   }
 
   const ctx = createBaseContext<WorkerContextExtensions, WorkerThreadSelfEmitOptions>(options?.context) as EventContext<WorkerContextExtensions, WorkerThreadSelfEmitOptions>
-  const reportParseError = createOnceReporter((error: unknown) => console.error('Failed to parse Node worker message:', error))
   const stopSending = ctx.on(and(
     matchBy(event => !('_flowDirection' in event) || !event._flowDirection || event._flowDirection === EventaFlowDirection.Outbound),
     matchBy('*'),
@@ -56,7 +55,7 @@ export function createContext(options?: WorkerThreadSelfAdapterOptions) {
       void ctx.emit(inner.eventa, inner.eventa.body, { raw: { message } }).catch(emitError => console.error('Failed to emit Node worker message:', emitError))
     }
     catch (error) {
-      reportParseError(error)
+      console.error('Failed to parse Node worker message:', error)
       void ctx.emit(workerErrorEvent, { kind: 'parse', error: toError(error, 'eventa: node worker message parse error') }, { raw: { message } }).catch(emitError => console.error('Failed to emit Node worker parse error:', emitError))
     }
   })

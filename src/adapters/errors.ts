@@ -34,26 +34,6 @@ interface ErrorEventLike {
 }
 
 /**
- * Reports only the first failure observed by one adapter context.
- *
- * Adapters still emit their public error event for every rejected message.
- * This helper only prevents an incompatible peer from flooding the library's
- * diagnostic output while the transport remains usable.
- */
-export function createOnceReporter<TArgs extends unknown[]>(report: (...args: TArgs) => void): (...args: TArgs) => void {
-  let reported = false
-
-  return (...args) => {
-    if (reported) {
-      return
-    }
-
-    reported = true
-    report(...args)
-  }
-}
-
-/**
  * Coerce whatever a transport hands us — an `Error`, a browser `ErrorEvent`, a
  * `MessageEvent`, or some host-specific object — into a real `Error`, without
  * losing the original message/stack.

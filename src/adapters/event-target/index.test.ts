@@ -114,8 +114,7 @@ describe('event target', async () => {
     expect(handler.mock.calls[2][0].body).toBe('first')
   })
 
-  it('reports each malformed frame without repeating the diagnostic output', () => {
-    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => void 0)
+  it('forwards a malformed-frame error like any other Eventa', () => {
     const target = new EventTarget()
     const { context } = createContext(target)
     const handler = vi.fn()
@@ -123,20 +122,16 @@ describe('event target', async () => {
     target.addEventListener('message', () => messageCount++)
     context.on(adapterErrorEvent, handler)
 
-    const malformedFrame = new CustomEvent('message', {
+    target.dispatchEvent(new CustomEvent('message', {
       detail: { id: 'legacy', payload: { id: 'event' } },
-    })
-    target.dispatchEvent(malformedFrame)
-    target.dispatchEvent(malformedFrame)
+    }))
 
-    expect(handler).toHaveBeenCalledTimes(2)
+    expect(handler).toHaveBeenCalledOnce()
     expect(handler.mock.calls[0][0].body).toMatchObject({
       kind: 'parse',
       error: expect.any(TypeError),
     })
-    expect(messageCount).toBe(4)
-    expect(consoleError).toHaveBeenCalledOnce()
-    consoleError.mockRestore()
+    expect(messageCount).toBe(2)
   })
 
   // ROOT CAUSE:
