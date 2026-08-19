@@ -4,7 +4,7 @@ import type { WindowMessageEnvelope } from './shared'
 
 import { createContext as createBaseContext } from '../../context'
 import { and, EventaFlowDirection, matchBy } from '../../eventa'
-import { toError } from '../errors'
+import { createOnceReporter, toError } from '../errors'
 import { createOutboundInner, restoreInner } from '../internal'
 import { errorEvent } from './shared'
 
@@ -53,6 +53,7 @@ export function createContext(options: WindowMessageAdapterOptions) {
   const sourceId = crypto.randomUUID()
   const { messageEvents: message = true, messageErrorEvents: messageError = true } = options
   const cleanupRemoval: Array<{ remove: () => void }> = []
+  const reportParseError = createOnceReporter((error: unknown) => console.error('Failed to parse window message:', error))
   const stopSending = ctx.on(and(
     matchBy(event => !('_flowDirection' in event) || !event._flowDirection || event._flowDirection === EventaFlowDirection.Outbound),
     matchBy('*'),
@@ -90,7 +91,7 @@ export function createContext(options: WindowMessageAdapterOptions) {
         void ctx.emit(inner.eventa, inner.eventa.body, { raw: { message: event } }).catch(emitError => console.error('Failed to emit window message:', emitError))
       }
       catch (error) {
-        console.error('Failed to parse window message:', error)
+        reportParseError(error)
         void ctx.emit(errorEvent, { kind: 'parse', error: toError(error, 'eventa: window message parse error') }, { raw: { error } }).catch(emitError => console.error('Failed to emit window-message parse error:', emitError))
       }
     }))

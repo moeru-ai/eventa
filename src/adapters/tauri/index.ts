@@ -9,7 +9,7 @@ import { getCurrentWebview } from '@tauri-apps/api/webview'
 import { createContext as createBaseContext } from '../../context'
 import { and, defineInboundEventa, EventaFlowDirection, matchBy } from '../../eventa'
 import { isInvokeEventa } from '../../invoke-shared'
-import { toError } from '../errors'
+import { createOnceReporter, toError } from '../errors'
 import { createOutboundInner, restoreInner } from '../internal'
 import { errorEvent } from './shared'
 
@@ -32,6 +32,7 @@ export interface TauriEmitOptions {
 
 export async function createContext(options: TauriAdapterOptions) {
   const ctx = createBaseContext<undefined, TauriEmitOptions>(options.context)
+  const reportParseError = createOnceReporter((error: unknown) => console.error('Failed to parse Tauri message:', error))
   const messageEventName = options.messageEventName ?? 'eventa-message'
   let disposePromise: Promise<void> | undefined
 
@@ -63,7 +64,7 @@ export async function createContext(options: TauriAdapterOptions) {
       void ctx.emit(inner.eventa, inner.eventa.body, { raw: { event } }).catch(emitError => console.error('Failed to emit Tauri message:', emitError))
     }
     catch (error) {
-      console.error('Failed to parse Tauri message:', error)
+      reportParseError(error)
       void ctx.emit(defineInboundEventa(errorEvent.id), { kind: 'parse', error: toError(error, 'eventa: Tauri message parse error') }, { raw: { event } }).catch(emitError => console.error('Failed to emit Tauri parse error:', emitError))
     }
   }, { target: listenTarget })
