@@ -14,6 +14,24 @@ Transport-aware events powering ergonomic RPC and streaming flows.
 > [!WARNING]
 > Eventa forwards whatever payload you emit. Validate data at the edges before sending it to untrusted peers.
 
+## Supported Transports
+
+All adapters carry the same Eventa event, invoke, stream, and cancellation protocol unless noted otherwise in their documentation.
+
+| Transport / runtime | Package export | Typical peers |
+| --- | --- | --- |
+| Electron IPC | `@moeru/eventa/adapters/electron/main`, `@moeru/eventa/adapters/electron/renderer` | Main process and renderer |
+| Tauri events | `@moeru/eventa/adapters/tauri` | JavaScript webviews |
+| DOM `EventTarget` | `@moeru/eventa/adapters/event-target` | Browser or custom event targets |
+| Node.js `EventEmitter` | `@moeru/eventa/adapters/event-emitter` | Node.js processes and libraries |
+| `window.postMessage` | `@moeru/eventa/adapters/window-message` | Windows, iframes, and popups |
+| Web Workers | `@moeru/eventa/adapters/webworkers`, `@moeru/eventa/adapters/webworkers/worker` | Browser main thread and worker |
+| Node.js Worker Threads | `@moeru/eventa/adapters/worker-threads`, `@moeru/eventa/adapters/worker-threads/worker` | Node.js main thread and worker |
+| `BroadcastChannel` | `@moeru/eventa/adapters/broadcast-channel` | Same-origin browser contexts |
+| Native WebSocket | `@moeru/eventa/adapters/websocket/native` | Browser or runtime WebSocket client |
+| H3 WebSocket | `@moeru/eventa/adapters/websocket/h3` | H3 WebSocket server |
+| Hono WebSocket | `@moeru/eventa/adapters/websocket/hono` | Hono WebSocket server |
+
 ## Installation
 
 ```sh
@@ -471,12 +489,24 @@ Eventa comes with various adapters for common use scenarios across browsers and 
       const chatEvents = defineInvokeEventa<{ message: string }, { text: string }>('chat:send')
       export const sendChat = defineInvoke(wsCtx, chatEvents)
       ```
-  2. Listen for connection lifecycle events to update UI state or retry logic:
+  2. Listen for connection lifecycle events to update UI state or retry logic.
+     Eventa closes an incompatible connection with code `4002` after its first
+     invalid frame, so the reconnect owner should stop retrying and prompt the
+     user to upgrade:
      ```ts
+     import { isUnsupportedProtocolClose } from '@moeru/eventa/adapters/websocket'
      import { wsConnectedEvent, wsDisconnectedEvent } from '@moeru/eventa/adapters/websocket/native'
 
      wsCtx.on(wsConnectedEvent, () => console.log('connected'))
-     wsCtx.on(wsDisconnectedEvent, () => console.log('disconnected'))
+     wsCtx.on(wsDisconnectedEvent, (event) => {
+       if (event.body && isUnsupportedProtocolClose(event.body.code)) {
+         stopReconnect()
+         showUpgradePrompt()
+         return
+       }
+
+       console.log('disconnected')
+     })
      ```
   3. Pair the client with either the H3 global or peer adapter on the server for a full RPC channel (`src/adapters/websocket/h3/*.test.ts`).
 

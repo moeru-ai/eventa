@@ -5,6 +5,7 @@ import type { HonoWsInvocableEventContext } from '.'
 import { describe, expect, it, vi } from 'vitest'
 
 import { createGlobalHooks, createPeerHooks, wsConnectedEvent, wsDisconnectedEvent } from '.'
+import { WS_UNSUPPORTED_PROTOCOL_CLOSE_CODE, WS_UNSUPPORTED_PROTOCOL_CLOSE_REASON } from '..'
 import { defineEventa, defineInvoke, defineInvokeEventa, defineInvokeHandler } from '../../..'
 
 function createMockWSContext(): WSContext & { sentMessages: string[] } {
@@ -194,5 +195,57 @@ describe('hono websocket adapter', () => {
 
     expect(handler).toHaveBeenCalledOnce()
     expect(handler.mock.calls[0][0].body).toEqual({ msg: 'hello' })
+  })
+
+  it('closes a peer once when it sends unsupported protocol frames', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => void 0)
+    const { hooks } = createPeerHooks()
+    const ws = createMockWSContext()
+
+    hooks.onOpen?.(new Event('open'), ws)
+    hooks.onMessage?.(createMessageEvent('{"type":"legacy"}'), ws)
+    hooks.onMessage?.(createMessageEvent('{"type":"legacy-again"}'), ws)
+    await new Promise(resolve => setTimeout(resolve, 20))
+
+    expect(ws.close).toHaveBeenCalledOnce()
+    expect(ws.close).toHaveBeenCalledWith(
+      WS_UNSUPPORTED_PROTOCOL_CLOSE_CODE,
+      WS_UNSUPPORTED_PROTOCOL_CLOSE_REASON,
+    )
+    expect(consoleError).toHaveBeenCalledOnce()
+    expect(consoleError).toHaveBeenCalledWith(
+      'Failed to parse WebSocket message:',
+      expect.any(TypeError),
+    )
+    consoleError.mockRestore()
+  })
+
+  it('isolates an unsupported global peer without closing healthy peers', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => void 0)
+    const ping = defineEventa<{ msg: string }>('test:hono:healthy-peer')
+    const { context, hooks } = createGlobalHooks()
+    const unsupportedPeer = createMockWSContext()
+    const healthyPeer = createMockWSContext()
+
+    hooks.onOpen?.(new Event('open'), unsupportedPeer)
+    hooks.onOpen?.(new Event('open'), healthyPeer)
+    unsupportedPeer.sentMessages.length = 0
+    healthyPeer.sentMessages.length = 0
+
+    hooks.onMessage?.(createMessageEvent('{"type":"legacy"}'), unsupportedPeer)
+    hooks.onMessage?.(createMessageEvent('{"type":"legacy-again"}'), unsupportedPeer)
+    await new Promise(resolve => setTimeout(resolve, 20))
+
+    expect(healthyPeer.sentMessages).toHaveLength(0)
+
+    context.emit(ping, { msg: 'still-connected' })
+
+    expect(unsupportedPeer.close).toHaveBeenCalledOnce()
+    expect(unsupportedPeer.sentMessages).toHaveLength(0)
+    expect(healthyPeer.close).not.toHaveBeenCalled()
+    expect(healthyPeer.sentMessages).toHaveLength(1)
+    expect(JSON.parse(healthyPeer.sentMessages[0]).eventa.id).toBe(ping.id)
+    expect(consoleError).toHaveBeenCalledOnce()
+    consoleError.mockRestore()
   })
 })

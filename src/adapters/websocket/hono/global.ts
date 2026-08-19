@@ -1,13 +1,17 @@
 import type { WSContext, WSEvents } from 'hono/ws'
 
 import type { CreateContextOptions } from '../../../context'
-import type { HonoWsEventContext, HonoWsRawEventOptions } from './shared'
+import type { WebSocketProtocolGuard } from '../protocol'
+import type { HonoWsEventContext, HonoWsMessageEvent, HonoWsRawEventOptions } from './shared'
 
 import { createContext as createBaseContext } from '../../../context'
-import { and, EventaFlowDirection, matchBy } from '../../../eventa'
+import { and, defineInboundEventa, EventaFlowDirection, matchBy } from '../../../eventa'
 import { createOutboundInner, restoreInner } from '../../internal'
+import { createWebSocketProtocolGuard } from '../protocol'
 import { readMessageText } from './internal'
 import { wsConnectedEvent, wsDisconnectedEvent, wsErrorEvent } from './shared'
+
+const inboundWsErrorEvent = defineInboundEventa<{ error: unknown }>(wsErrorEvent.id)
 
 export interface GlobalHooksResult {
   context: HonoWsEventContext
@@ -35,6 +39,7 @@ export interface CreateGlobalHooksOptions {
 export function createGlobalHooks(options: CreateGlobalHooksOptions = {}): GlobalHooksResult {
   const context = createBaseContext<undefined, HonoWsRawEventOptions>(options.context)
   const peers = new Set<WSContext>()
+  const protocolGuards = new WeakMap<WSContext, WebSocketProtocolGuard<HonoWsMessageEvent>>()
 
   context.on(and(
     matchBy(event => !('_flowDirection' in event) || !event._flowDirection || event._flowDirection === EventaFlowDirection.Outbound),
@@ -53,17 +58,36 @@ export function createGlobalHooks(options: CreateGlobalHooksOptions = {}): Globa
   const hooks: WSEvents = {
     onOpen(event, ws) {
       peers.add(ws)
+      protocolGuards.set(ws, createWebSocketProtocolGuard<HonoWsMessageEvent>({
+        close: (code, reason) => ws.close(code, reason),
+        onRejected(error, event) {
+          peers.delete(ws)
+          // This transport error belongs to the local server context. Marking
+          // it inbound keeps the global outbound bridge from broadcasting one
+          // incompatible peer's failure to every healthy peer.
+          void context.emit(inboundWsErrorEvent, { error }, { raw: { message: event } }).catch(emitError => console.error('Failed to emit Hono WebSocket parse error:', emitError))
+        },
+      }))
       void context.emit(wsConnectedEvent, undefined, { raw: { open: event } }).catch(emitError => console.error('Failed to emit Hono WebSocket open event:', emitError))
     },
 
-    onMessage(event) {
+    onMessage(event, ws) {
+      const protocolGuard = protocolGuards.get(ws)
+      if (!protocolGuard || protocolGuard.rejected) {
+        return
+      }
+
       void readMessageText(event.data)
         .then(message => restoreInner(JSON.parse(message)))
         .then(
-          inner => context.emit(inner.eventa, inner.eventa.body, { raw: { message: event } }),
+          (inner) => {
+            if (protocolGuard.rejected) {
+              return
+            }
+            return context.emit(inner.eventa, inner.eventa.body, { raw: { message: event } })
+          },
           (error) => {
-            console.error('Failed to parse WebSocket message:', error)
-            return context.emit(wsErrorEvent, { error }, { raw: { message: event } })
+            protocolGuard.reject(error, event)
           },
         )
         .catch(emitError => console.error('Failed to emit Hono WebSocket message:', emitError))
@@ -71,6 +95,7 @@ export function createGlobalHooks(options: CreateGlobalHooksOptions = {}): Globa
 
     onClose(event, ws) {
       peers.delete(ws)
+      protocolGuards.delete(ws)
       void context.emit(wsDisconnectedEvent, undefined, { raw: { close: event } }).catch(emitError => console.error('Failed to emit Hono WebSocket close event:', emitError))
     },
 
