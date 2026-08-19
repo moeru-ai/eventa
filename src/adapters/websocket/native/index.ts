@@ -3,21 +3,10 @@ import type { CreateContextOptions } from '../../../context'
 import { createContext as createBaseContext } from '../../../context'
 import { and, defineEventa, EventaFlowDirection, matchBy } from '../../../eventa'
 import { createOutboundInner, restoreInner } from '../../internal'
-import { createWebSocketProtocolGuard } from '../protocol'
 
 export const wsConnectedEvent = defineEventa<{ url: string }>()
-export const wsDisconnectedEvent = defineEventa<NativeWebSocketDisconnect>()
+export const wsDisconnectedEvent = defineEventa<{ url: string }>()
 export const wsErrorEvent = defineEventa<{ error: unknown }>()
-
-/** Close metadata exposed to lifecycle listeners and reconnect owners. */
-export interface NativeWebSocketDisconnect {
-  /** WebSocket close code, including Eventa's private-use protocol codes. */
-  code: number
-  /** WebSocket close reason supplied by the peer. */
-  reason: string
-  /** URL owned by the wrapped WebSocket. */
-  url: string
-}
 
 /** Creates an Eventa Context backed by a native WebSocket. */
 export interface NativeWebSocketAdapterOptions {
@@ -41,26 +30,16 @@ export function createContext(wsConn: WebSocket, options?: NativeWebSocketAdapte
       wsConn.send(JSON.stringify(inner))
     }
   })
-  const protocolGuard = createWebSocketProtocolGuard<MessageEvent>({
-    close: (code, reason) => wsConn.close(code, reason),
-    onRejected(error, event) {
-      stopSending()
-      void ctx.emit(wsErrorEvent, { error }, { raw: { message: event } }).catch(emitError => console.error('Failed to emit WebSocket parse error:', emitError))
-      ctx.abort(new Error('eventa: invoke cancelled, unsupported websocket protocol'))
-    },
-  })
 
   wsConn.onmessage = (event) => {
-    if (protocolGuard.rejected) {
-      return
-    }
-
     try {
       const inner = restoreInner(JSON.parse(String(event.data)))
       void ctx.emit(inner.eventa, inner.eventa.body, { raw: { message: event } }).catch(emitError => console.error('Failed to emit WebSocket message:', emitError))
     }
     catch (error) {
-      protocolGuard.reject(error, event)
+      // A malformed frame is recoverable; keep the socket lifetime alive.
+      console.error('Failed to parse WebSocket message:', error)
+      void ctx.emit(wsErrorEvent, { error }, { raw: { message: event } }).catch(emitError => console.error('Failed to emit WebSocket parse error:', emitError))
     }
   }
   wsConn.onopen = event => void ctx.emit(wsConnectedEvent, { url: wsConn.url }, { raw: { open: event } }).catch(emitError => console.error('Failed to emit WebSocket open event:', emitError))
@@ -73,11 +52,7 @@ export function createContext(wsConn: WebSocket, options?: NativeWebSocketAdapte
   wsConn.onclose = (close) => {
     stopSending()
     ctx.abort(new Error(`eventa: invoke cancelled, websocket disconnected (${wsConn.url})`))
-    void ctx.emit(wsDisconnectedEvent, {
-      code: close.code || 0,
-      reason: close.reason || '',
-      url: wsConn.url,
-    }, { raw: { close } }).catch(emitError => console.error('Failed to emit WebSocket close event:', emitError))
+    void ctx.emit(wsDisconnectedEvent, { url: wsConn.url }, { raw: { close } }).catch(emitError => console.error('Failed to emit WebSocket close event:', emitError))
   }
 
   return { context: ctx }

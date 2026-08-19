@@ -7,7 +7,6 @@ import { describe, expect, it, vi } from 'vitest'
 import { defineEventa, defineInvoke, defineInvokeEventa, defineInvokeHandler } from '../../../'
 import { createUntil, randomBetween } from '../../../utils'
 import { createContext } from '../native'
-import { WS_UNSUPPORTED_PROTOCOL_CLOSE_CODE, WS_UNSUPPORTED_PROTOCOL_CLOSE_REASON } from '../protocol'
 import { createPeerHooks } from './peer'
 
 describe('h3 websocket adapter', { timeout: 2000 }, async () => {
@@ -210,39 +209,5 @@ describe('h3 websocket adapter', { timeout: 2000 }, async () => {
     wsConn.close()
 
     await expect(pending).rejects.toThrowError(/peer disconnected/i)
-  })
-
-  it('closes a peer that sends an unsupported protocol frame', async (testCtx) => {
-    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => void 0)
-    testCtx.onTestFinished(() => consoleError.mockRestore())
-    const port = randomBetween(40000, 50000)
-    const app = new H3()
-    const { hooks } = createPeerHooks()
-    app.get('/ws', defineWebSocketHandler(hooks))
-
-    const server = serve(app, {
-      port,
-      plugins: [ws({
-        resolve: async (req) => {
-          const response = (await app.fetch(req)) as Response & { crossws: Partial<Hooks> }
-          return response.crossws
-        },
-      })],
-    })
-    testCtx.onTestFinished(() => server.close())
-
-    const opened = createUntil<void>()
-    const closed = createUntil<CloseEvent>()
-    const wsConn = new WebSocket(`ws://localhost:${port}/ws`)
-    wsConn.onopen = () => opened.handler()
-    wsConn.onclose = event => closed.handler(event)
-    await opened.promise
-
-    wsConn.send('{"type":"legacy"}')
-    const closeEvent = await closed.promise
-
-    expect(closeEvent.code).toBe(WS_UNSUPPORTED_PROTOCOL_CLOSE_CODE)
-    expect(closeEvent.reason).toBe(WS_UNSUPPORTED_PROTOCOL_CLOSE_REASON)
-    expect(consoleError).toHaveBeenCalledOnce()
   })
 })

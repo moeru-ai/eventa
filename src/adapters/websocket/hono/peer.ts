@@ -1,13 +1,11 @@
 import type { WSEvents } from 'hono/ws'
 
 import type { CreateContextOptions } from '../../../context'
-import type { WebSocketProtocolGuard } from '../protocol'
-import type { HonoWsInvocableEventContext, HonoWsMessageEvent, HonoWsRawEventOptions } from './shared'
+import type { HonoWsInvocableEventContext, HonoWsRawEventOptions } from './shared'
 
 import { createContext as createBaseContext } from '../../../context'
 import { and, EventaFlowDirection, matchBy } from '../../../eventa'
 import { createOutboundInner, restoreInner } from '../../internal'
-import { createWebSocketProtocolGuard } from '../protocol'
 import { readMessageText } from './internal'
 import { wsConnectedEvent, wsDisconnectedEvent, wsErrorEvent } from './shared'
 
@@ -37,7 +35,6 @@ export interface PeerHooksResult {
 export function createPeerHooks(options: CreatePeerHooksOptions = {}): PeerHooksResult {
   let context: HonoWsInvocableEventContext | undefined
   let stopSending: (() => void) | undefined
-  let protocolGuard: WebSocketProtocolGuard<HonoWsMessageEvent> | undefined
 
   const hooks: WSEvents = {
     onOpen(event, ws) {
@@ -53,37 +50,24 @@ export function createPeerHooks(options: CreatePeerHooksOptions = {}): PeerHooks
           ws.send(JSON.stringify(inner))
         }
       })
-      protocolGuard = createWebSocketProtocolGuard<HonoWsMessageEvent>({
-        close: (code, reason) => ws.close(code, reason),
-        onRejected(error, event) {
-          stopSending?.()
-          void ctx.emit(wsErrorEvent, { error }, { raw: { message: event } }).catch(emitError => console.error('Failed to emit Hono WebSocket parse error:', emitError))
-          ctx.abort(new Error('eventa: invoke cancelled, unsupported websocket protocol'))
-        },
-      })
 
       void ctx.emit(wsConnectedEvent, undefined, { raw: { open: event } }).catch(emitError => console.error('Failed to emit Hono WebSocket open event:', emitError))
       options.onContext?.(ctx)
     },
 
     onMessage(event) {
-      if (!context || !protocolGuard || protocolGuard.rejected) {
+      if (!context) {
         return
       }
       const currentContext = context
-      const currentProtocolGuard = protocolGuard
 
       void readMessageText(event.data)
         .then(message => restoreInner(JSON.parse(message)))
         .then(
-          (inner) => {
-            if (currentProtocolGuard.rejected) {
-              return
-            }
-            return currentContext.emit(inner.eventa, inner.eventa.body, { raw: { message: event } })
-          },
+          inner => currentContext.emit(inner.eventa, inner.eventa.body, { raw: { message: event } }),
           (error) => {
-            currentProtocolGuard.reject(error, event)
+            console.error('Failed to parse WebSocket message:', error)
+            return currentContext.emit(wsErrorEvent, { error }, { raw: { message: event } })
           },
         )
         .catch(emitError => console.error('Failed to emit Hono WebSocket message:', emitError))
@@ -99,7 +83,6 @@ export function createPeerHooks(options: CreatePeerHooksOptions = {}): PeerHooks
       void context.emit(wsDisconnectedEvent, undefined, { raw: { close: event } }).catch(emitError => console.error('Failed to emit Hono WebSocket close event:', emitError))
       context = undefined
       stopSending = undefined
-      protocolGuard = undefined
     },
 
     onError(event) {
