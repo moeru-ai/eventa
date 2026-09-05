@@ -2,7 +2,7 @@
   "name": "@moeru/eventa",
   "type": "module",
   "version": "1.0.0",
-  "packageManager": "pnpm@11.7.0",
+  "packageManager": "pnpm@12.3.0",
   "description": "Events are all you need",
   "author": {
     "name": "RainbowBird",
