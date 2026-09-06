@@ -11,9 +11,9 @@ catalog:
   '@tauri-apps/api': ^2.11.1
   '@types/node': ^25.9.3
   '@types/picomatch': ^4.0.3
-  '@vitest/browser-playwright': ^4.1.9
-  '@vitest/coverage-v8': ^4.1.9
-  '@vitest/web-worker': ^4.1.9
+  '@vitest/browser-playwright': ^5.0.0
+  '@vitest/coverage-v8': ^5.0.0
+  '@vitest/web-worker': ^5.0.0
   bumpp: ^12.0.0
   crossws: ^0.4.6
   eslint: ^10.5.0
@@ -27,7 +27,7 @@ catalog:
   typescript: ^6.0.3
   unplugin-unused: ^0.5.7
   vite: ^8.0.16
-  vitest: ^4.1.9
+  vitest: ^5.0.0
 
 catalogMode: prefer
 
