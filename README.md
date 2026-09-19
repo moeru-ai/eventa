@@ -219,7 +219,7 @@ Eventa comes with various adapters for common use scenarios across browsers and 
 
      app.on('ready', () => {
        // ... other code
-       const { context: mainCtx } = createMainContext(ipcMain, mainWindow.webContents)
+       const { context: mainCtx } = createMainContext(ipcMain, mainWindow, { onlySameWindow: true })
        defineInvokeHandler(mainCtx, readdir, async ({ cwd, target }) => {
          const fs = await import('node:fs/promises')
          const path = await import('node:path')
@@ -229,6 +229,15 @@ Eventa comes with various adapters for common use scenarios across browsers and 
        })
      })
      ```
+     With `onlySameWindow: true`, the adapter accepts IPC only from the supplied window.
+     This includes errors, extra listeners, RPC replies, stream frames, and cancellation.
+     The window must be live. Closing it disposes the adapter and rejects pending calls.
+     Call `dispose()` to release the adapter earlier.
+
+     The option defaults to `false`. Without it, a window selects the send target but does not restrict incoming IPC.
+     Code that previously enabled this option to filter replies now also filters incoming messages.
+     Omit the window for a shared main-process context that replies to each request's sender.
+
   3. In the renderer (not restricted to preload scripts, but recommended), bridge to `ipcRenderer` and expose a safe API:
      ```ts
      import { createContext as createRendererContext } from '@moeru/eventa/adapters/electron/renderer'
