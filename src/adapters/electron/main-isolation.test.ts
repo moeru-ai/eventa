@@ -3,7 +3,7 @@ import type { BrowserWindow, IpcMain } from 'electron'
 
 import { EventEmitter } from 'node:events'
 
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 
 import { defineEventa } from '../../eventa'
 import { defineInvoke, defineInvokeHandler } from '../../invoke'
@@ -37,71 +37,67 @@ function createWindow(ipcMain: EventEmitter, id: number) {
 }
 
 describe('electron window isolation', () => {
+  let ipcMain: IpcMain
+  let owner: ReturnType<typeof createWindow>
+  let foreign: ReturnType<typeof createWindow>
+
+  beforeEach(() => {
+    ipcMain = new EventEmitter() as IpcMain
+    owner = createWindow(ipcMain, 1)
+    foreign = createWindow(ipcMain, 2)
+  })
+
+  afterEach(() => {
+    owner.close()
+    foreign.close()
+    vi.restoreAllMocks()
+  })
+
   // https://github.com/moeru-ai/airi/issues/2579
-  it('executes one handler for Issue #2579: a renderer request only in its bound window context', async () => {
+  it('executes only the requesting window handler (Issue #2579)', async () => {
     // ROOT CAUSE:
     // Both adapters listen on the same ipcMain channel. Filtering only replies
     // lets both handlers run, so one click produces two external side effects.
-    const ipcMain = new EventEmitter()
-    const first = createWindow(ipcMain, 1)
-    const second = createWindow(ipcMain, 2)
-    const mainA = createContext(ipcMain as IpcMain, first.window, { onlySameWindow: true })
-    const mainB = createContext(ipcMain as IpcMain, second.window, { onlySameWindow: true })
-    const renderer = createRendererContext(second.renderer)
+    const foreignMain = createContext(ipcMain, foreign.window, { onlySameWindow: true })
+    const ownerMain = createContext(ipcMain, owner.window, { onlySameWindow: true })
+    const renderer = createRendererContext(owner.renderer)
     const open = defineInvokeEventa<{ path: string }>()
-    const handlerA = vi.fn(() => ({ path: '/first' }))
-    const handlerB = vi.fn(() => ({ path: '/second' }))
-    defineInvokeHandler(mainA.context, open, handlerA)
-    defineInvokeHandler(mainB.context, open, handlerB)
-    try {
-      await expect(defineInvoke(renderer.context, open)()).resolves.toEqual({ path: '/second' })
-      expect(handlerA).not.toHaveBeenCalled()
-      expect(handlerB).toHaveBeenCalledTimes(1)
-      expect(first.window.webContents.send).not.toHaveBeenCalled()
-    }
-    finally {
-      renderer.dispose()
-      mainA.dispose()
-      mainB.dispose()
-    }
+    const foreignHandler = vi.fn(() => ({ path: '/foreign' }))
+    const ownerHandler = vi.fn(() => ({ path: '/owner' }))
+    defineInvokeHandler(foreignMain.context, open, foreignHandler)
+    defineInvokeHandler(ownerMain.context, open, ownerHandler)
+    onTestFinished(renderer.dispose)
+    await expect(defineInvoke(renderer.context, open)()).resolves.toEqual({ path: '/owner' })
+    expect(foreignHandler).not.toHaveBeenCalled()
+    expect(ownerHandler).toHaveBeenCalledTimes(1)
+    expect(foreign.window.webContents.send).not.toHaveBeenCalled()
   })
 
   it('filters foreign messages before parsing, errors, and extra listeners', async () => {
-    const ipcMain = new EventEmitter()
-    const owner = createWindow(ipcMain, 1)
-    const foreign = createWindow(ipcMain, 2)
     const extra = vi.fn()
     const errors = vi.fn()
     const log = vi.spyOn(console, 'error').mockImplementation(() => {})
-    const adapter = createContext(ipcMain as IpcMain, owner.window, {
+    const adapter = createContext(ipcMain, owner.window, {
       onlySameWindow: true,
       extraListeners: { extra },
     })
     adapter.context.on(errorEvent, errors)
-    try {
-      foreign.renderer.send('eventa-message', null)
-      foreign.renderer.send('eventa-error', 'foreign error')
-      foreign.renderer.send('extra', 'foreign extra')
-      await Promise.resolve()
-      expect(errors).not.toHaveBeenCalled()
-      expect(extra).not.toHaveBeenCalled()
-      expect(log).not.toHaveBeenCalled()
-      owner.renderer.send('eventa-error', 'owner error')
-      owner.renderer.send('extra', 'owner extra')
-      await Promise.resolve()
-      expect(errors).toHaveBeenCalledTimes(1)
-      expect(extra).toHaveBeenCalledTimes(1)
-    }
-    finally {
-      adapter.dispose()
-      log.mockRestore()
-    }
+    foreign.renderer.send('eventa-message', null)
+    foreign.renderer.send('eventa-error', 'foreign error')
+    foreign.renderer.send('extra', 'foreign extra')
+    await Promise.resolve()
+    expect(errors).not.toHaveBeenCalled()
+    expect(extra).not.toHaveBeenCalled()
+    expect(log).not.toHaveBeenCalled()
+    owner.renderer.send('eventa-error', 'owner error')
+    owner.renderer.send('extra', 'owner extra')
+    await Promise.resolve()
+    expect(errors).toHaveBeenCalledTimes(1)
+    expect(extra).toHaveBeenCalledTimes(1)
   })
 
   it('rejects pending calls and removes listeners when the bound window closes', async () => {
-    const ipcMain = new EventEmitter()
-    const owner = createWindow(ipcMain, 1)
-    const adapter = createContext(ipcMain as IpcMain, owner.window, { onlySameWindow: true, extraListeners: { extra: vi.fn() } })
+    const adapter = createContext(ipcMain, owner.window, { onlySameWindow: true, extraListeners: { extra: vi.fn() } })
     const pending = defineInvoke(adapter.context, defineInvokeEventa<string>())()
     const rejected = expect(pending).rejects.toThrow('window closed')
     owner.close()
@@ -114,97 +110,58 @@ describe('electron window isolation', () => {
   })
 
   it('removes its close listener on manual disposal without affecting another adapter', () => {
-    const ipcMain = new EventEmitter()
-    const first = createWindow(ipcMain, 1)
-    const second = createWindow(ipcMain, 2)
-    const mainA = createContext(ipcMain as IpcMain, first.window, { onlySameWindow: true })
-    const mainB = createContext(ipcMain as IpcMain, second.window, { onlySameWindow: true })
-    mainA.dispose()
-    mainA.dispose()
-    expect(first.window.listenerCount('closed')).toBe(0)
+    const foreignMain = createContext(ipcMain, foreign.window, { onlySameWindow: true })
+    const ownerMain = createContext(ipcMain, owner.window, { onlySameWindow: true })
+    foreignMain.dispose()
+    foreignMain.dispose()
+    expect(foreign.window.listenerCount('closed')).toBe(0)
     expect(ipcMain.listenerCount('eventa-message')).toBe(1)
     expect(ipcMain.listenerCount('eventa-error')).toBe(1)
-    first.close()
+    foreign.close()
     expect(ipcMain.listenerCount('eventa-message')).toBe(1)
-    mainB.dispose()
+    ownerMain.dispose()
   })
 
   it('delivers response streams only through the requesting window', async () => {
-    const ipcMain = new EventEmitter()
-    const first = createWindow(ipcMain, 1)
-    const second = createWindow(ipcMain, 2)
-    const mainA = createContext(ipcMain as IpcMain, first.window, { onlySameWindow: true })
-    const mainB = createContext(ipcMain as IpcMain, second.window, { onlySameWindow: true })
-    const renderer = createRendererContext(second.renderer)
+    const foreignMain = createContext(ipcMain, foreign.window, { onlySameWindow: true })
+    const ownerMain = createContext(ipcMain, owner.window, { onlySameWindow: true })
+    const renderer = createRendererContext(owner.renderer)
     const event = defineInvokeEventa<number>()
     const foreignHandler = vi.fn(async function* () {
       yield 99
     })
-    defineStreamInvokeHandler(mainA.context, event, foreignHandler)
-    defineStreamInvokeHandler(mainB.context, event, async function* () {
+    defineStreamInvokeHandler(foreignMain.context, event, foreignHandler)
+    defineStreamInvokeHandler(ownerMain.context, event, async function* () {
       yield 1
       yield 2
     })
-    try {
-      const received: number[] = []
-      for await (const value of defineStreamInvoke(renderer.context, event)(undefined)) {
-        received.push(value)
-      }
-      expect(received).toEqual([1, 2])
-      expect(foreignHandler).not.toHaveBeenCalled()
-      expect(first.window.webContents.send).not.toHaveBeenCalled()
+    onTestFinished(renderer.dispose)
+    const received: number[] = []
+    for await (const value of defineStreamInvoke(renderer.context, event)(undefined)) {
+      received.push(value)
     }
-    finally {
-      renderer.dispose()
-      mainA.dispose()
-      mainB.dispose()
-    }
-  })
-
-  it('keeps receiving other windows when isolation is disabled', async () => {
-    const ipcMain = new EventEmitter()
-    const owner = createWindow(ipcMain, 1)
-    const foreign = createWindow(ipcMain, 2)
-    const adapter = createContext(ipcMain as IpcMain, owner.window)
-    const renderer = createRendererContext(foreign.renderer)
-    const event = defineEventa<string>()
-    const received = vi.fn()
-    adapter.context.on(event, received)
-    try {
-      await renderer.context.emit(event, 'hello')
-      expect(received).toHaveBeenCalledTimes(1)
-      expect(owner.window.listenerCount('closed')).toBe(0)
-    }
-    finally {
-      renderer.dispose()
-      adapter.dispose()
-    }
+    expect(received).toEqual([1, 2])
+    expect(foreignHandler).not.toHaveBeenCalled()
+    expect(foreign.window.webContents.send).not.toHaveBeenCalled()
   })
 
   it('requires a live window when isolation is enabled', () => {
-    const ipcMain = new EventEmitter()
-    expect(() => createContext(ipcMain as IpcMain, undefined, { onlySameWindow: true })).toThrow('live BrowserWindow')
-    const owner = createWindow(ipcMain, 1)
+    expect(() => createContext(ipcMain, undefined, { onlySameWindow: true })).toThrow('live BrowserWindow')
     owner.close()
-    expect(() => createContext(ipcMain as IpcMain, owner.window, { onlySameWindow: true })).toThrow('live BrowserWindow')
+    expect(() => createContext(ipcMain, owner.window, { onlySameWindow: true })).toThrow('live BrowserWindow')
     expect(ipcMain.eventNames()).toEqual([])
   })
 
-  it('keeps unbound contexts able to receive requests from any window', async () => {
-    const ipcMain = new EventEmitter()
-    const owner = createWindow(ipcMain, 1)
-    const adapter = createContext(ipcMain as IpcMain)
-    const renderer = createRendererContext(owner.renderer)
+  it.each(['bound', 'unbound'] as const)('accepts any sender in a %s context by default', async (binding) => {
+    const adapter = createContext(ipcMain, binding === 'bound' ? owner.window : undefined)
+    const renderer = createRendererContext(foreign.renderer)
+    onTestFinished(renderer.dispose)
+    onTestFinished(adapter.dispose)
     const event = defineEventa<string>()
     const received = vi.fn()
     adapter.context.on(event, received)
-    try {
-      await renderer.context.emit(event, 'hello')
-      expect(received).toHaveBeenCalledTimes(1)
-    }
-    finally {
-      renderer.dispose()
-      adapter.dispose()
-    }
+    await renderer.context.emit(event, 'hello')
+    expect(received).toHaveBeenCalledTimes(1)
+    expect(owner.window.listenerCount('closed')).toBe(0)
   })
 })
