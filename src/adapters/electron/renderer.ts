@@ -32,6 +32,11 @@ export function createContext(ipcRenderer: IpcRenderer, options?: ElectronRender
     extraListeners = {},
   } = options || {}
   const cleanupRemoval: Array<{ remove: () => void }> = []
+  function listen(channel: string, listener: IpcRendererListener) {
+    const remove = ipcRenderer.on(channel, listener)
+    // The preload bridge retains the registered callback inside this disposer.
+    cleanupRemoval.push({ remove: typeof remove === 'function' ? remove : () => ipcRenderer.removeListener(channel, listener) })
+  }
   const stopSending = ctx.on(and(
     matchBy(event => !('_flowDirection' in event) || !event._flowDirection || event._flowDirection === EventaFlowDirection.Outbound),
     matchBy('*'),
@@ -67,19 +72,16 @@ export function createContext(ipcRenderer: IpcRenderer, options?: ElectronRender
   }
 
   if (messageEventName) {
-    ipcRenderer.on(messageEventName, handleIncomingMessage)
-    cleanupRemoval.push({ remove: () => ipcRenderer.removeListener(messageEventName, handleIncomingMessage) })
+    listen(messageEventName, handleIncomingMessage)
   }
   if (errorEventName) {
     const handleErrorMessage: IpcRendererListener = (ipcRendererEvent, error) => {
       void ctx.emit(errorEvent, { error }, { raw: { ipcRendererEvent, event: error } }).catch(emitError => console.error('Failed to emit IpcRenderer error:', emitError))
     }
-    ipcRenderer.on(errorEventName, handleErrorMessage)
-    cleanupRemoval.push({ remove: () => ipcRenderer.removeListener(errorEventName, handleErrorMessage) })
+    listen(errorEventName, handleErrorMessage)
   }
   for (const [eventName, listener] of Object.entries(extraListeners)) {
-    ipcRenderer.on(eventName, listener)
-    cleanupRemoval.push({ remove: () => ipcRenderer.removeListener(eventName, listener) })
+    listen(eventName, listener)
   }
 
   return {

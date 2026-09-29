@@ -38,7 +38,11 @@ describe('browser websocket adapter', () => {
     const app = new H3()
     let deliverySequence = 0
     app.get('/ws', defineWebSocketHandler({
-      message: (peer) => {
+      message: (peer, message) => {
+        // The adapter also sends its connection event. Only reply to this test's request.
+        if (JSON.parse(message.text()).eventa.id !== sendEvent.id) {
+          return
+        }
         deliverySequence += 1
         peer.send(JSON.stringify({
           deliveryId: `native-websocket-inbound-delivery-${deliverySequence}`,
@@ -69,19 +73,9 @@ describe('browser websocket adapter', () => {
     }
 
     const wsConn = new WebSocket(`ws://localhost:${port}/ws`)
-    const opened = createUntil<void>({
-      async intervalHandler() {
-        if (wsConn.readyState === WebSocket.OPEN) {
-          return true
-        }
-
-        return false
-      },
-    })
-    wsConn.onopen = () => {
-      opened.handler()
-    }
+    const opened = createUntil<void>()
     const { context: ctx } = createContext(wsConn)
+    ctx.on(wsConnectedEvent, () => opened.handler())
     await opened.promise
 
     const onMessage = vi.fn()
