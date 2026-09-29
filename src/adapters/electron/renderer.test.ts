@@ -1,7 +1,7 @@
 /// <reference types="vitest" />
 /// <reference types="vite/client" />
 
-import type { IpcRenderer } from '@electron-toolkit/preload'
+import type { IpcRenderer, IpcRendererListener } from '@electron-toolkit/preload'
 import type { IpcRendererEvent } from 'electron'
 import type { Mock } from 'vitest'
 
@@ -17,6 +17,57 @@ import { createUntilTriggeredOnce } from '../../utils'
 import { createContext } from './renderer'
 
 describe('electron/renderer', async () => {
+  it('removes preload bridge listeners when contexts are disposed', () => {
+    const listeners = new Map<string, Set<IpcRendererListener>>()
+    const ipcRenderer = {
+      send: vi.fn(),
+      on(channel: string, listener: IpcRendererListener) {
+        const registered: IpcRendererListener = (...args) => listener(...args)
+        const channelListeners = listeners.get(channel) ?? new Set<IpcRendererListener>()
+        channelListeners.add(registered)
+        listeners.set(channel, channelListeners)
+        return () => channelListeners.delete(registered)
+      },
+      removeListener(channel: string, listener: IpcRendererListener) {
+        listeners.get(channel)?.delete(listener)
+      },
+    } as unknown as IpcRenderer
+
+    for (let index = 0; index < 3; index++) {
+      const { dispose } = createContext(ipcRenderer, {
+        extraListeners: { 'extra-message': vi.fn() },
+      })
+      dispose()
+    }
+
+    expect(listeners.get('eventa-message')?.size).toBe(0)
+    expect(listeners.get('eventa-error')?.size).toBe(0)
+    expect(listeners.get('extra-message')?.size).toBe(0)
+  })
+
+  it('removes native Electron listeners when contexts are disposed', () => {
+    const listeners = new Map<string, Set<IpcRendererListener>>()
+    const ipcRenderer = {
+      send: vi.fn(),
+      on(channel: string, listener: IpcRendererListener) {
+        const channelListeners = listeners.get(channel) ?? new Set<IpcRendererListener>()
+        channelListeners.add(listener)
+        listeners.set(channel, channelListeners)
+        return this
+      },
+      removeListener(channel: string, listener: IpcRendererListener) {
+        listeners.get(channel)?.delete(listener)
+        return this
+      },
+    } as unknown as IpcRenderer
+
+    const { dispose } = createContext(ipcRenderer)
+    dispose()
+
+    expect(listeners.get('eventa-message')?.size).toBe(0)
+    expect(listeners.get('eventa-error')?.size).toBe(0)
+  })
+
   it('context should be able to on and emit events', async () => {
     const ipcRenderer = {
       on: vi.fn(),
