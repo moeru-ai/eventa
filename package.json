@@ -1,7 +1,7 @@
 {
   "name": "@moeru/eventa",
   "type": "module",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "packageManager": "pnpm@12.3.0",
   "description": "Events are all you need",
   "author": {
