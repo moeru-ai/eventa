@@ -1,16 +1,20 @@
 import { createAbortError } from './utils'
 
+interface InvokeCancelState {
+  materialized: boolean
+  reason?: unknown
+}
+
 /**
  * Owns request reconstruction and cancellation correlation for one handler.
  *
- * Cancellation is allowed to arrive before request data. A bounded tombstone
- * keeps that reason until the first request frame materializes exactly one
+ * Cancellation is allowed to arrive before request data. Bounded cancellation
+ * state keeps that reason until the first request frame materializes exactly one
  * handler invocation; later frames for the cancelled invocation are ignored.
  */
 export class InvokeState<Req> {
   private readonly abortControllers = new Map<string, AbortController>()
-  private readonly abortReasons = new Map<string, unknown>()
-  private readonly materializedInvocations = new Set<string>()
+  private readonly invokeCancelStates = new Map<string, InvokeCancelState>()
   private readonly streamControllers = new Map<string, ReadableStreamDefaultController<Req>>()
 
   /**
@@ -40,7 +44,10 @@ export class InvokeState<Req> {
     this.streamControllers.clear()
   }
 
-  constructor(private readonly contextSignal: AbortSignal) {
+  constructor(
+    private readonly contextSignal: AbortSignal,
+    private readonly maxCancelStates = 10_000,
+  ) {
     if (contextSignal.aborted) {
       this.onContextAbort()
       return
@@ -49,21 +56,35 @@ export class InvokeState<Req> {
   }
 
   shouldIgnoreFrame(invokeId: string): boolean {
-    return this.contextSignal.aborted
-      || (this.abortReasons.has(invokeId) && this.materializedInvocations.has(invokeId))
+    if (this.contextSignal.aborted) {
+      return true
+    }
+
+    // Once an abort has been correlated with an invocation, every later frame
+    // for that invoke is late and must not start or re-enter the handler.
+    return this.invokeCancelStates.get(invokeId)?.materialized === true
   }
 
   materialize(invokeId: string): AbortController {
     const controller = new AbortController()
     this.abortControllers.set(invokeId, controller)
-    this.materializedInvocations.add(invokeId)
 
     if (this.contextSignal.aborted) {
       this.scheduleAbort(controller, this.contextSignal.reason)
     }
-    if (this.abortReasons.has(invokeId)) {
-      this.scheduleAbort(controller, this.abortReasons.get(invokeId))
+
+    const cancellation = this.invokeCancelStates.get(invokeId)
+    if (!cancellation) {
+      return controller
     }
+
+    // The first request/end/error frame materializes an early-aborted invoke.
+    // The handler may be invoked once to observe cancellation, but later frames
+    // must not start a second invocation.
+    const reason = cancellation.reason
+    cancellation.materialized = true
+    cancellation.reason = undefined
+    this.scheduleAbort(controller, reason)
     return controller
   }
 
@@ -109,39 +130,56 @@ export class InvokeState<Req> {
   }
 
   rememberAbort(invokeId: string, reason: unknown): void {
-    this.abortReasons.delete(invokeId)
-    this.abortReasons.set(invokeId, reason)
+    const abortController = this.abortControllers.get(invokeId)
+    const streamController = this.streamControllers.get(invokeId)
+    const cancellation = this.invokeCancelStates.get(invokeId)
 
-    // Bound cancellation tombstones whose request never arrives. Deleting and
-    // reinserting above also refreshes the insertion order for repeated aborts.
-    while (this.abortReasons.size > 10_000) {
-      const oldestInvokeId = this.abortReasons.keys().next().value
-      if (typeof oldestInvokeId !== 'string') {
-        break
-      }
-      this.abortReasons.delete(oldestInvokeId)
-      this.materializedInvocations.delete(oldestInvokeId)
+    // A materialized cancellation has already been applied to this invoke.
+    // Repeated abort frames must not restart correlation or replace its state.
+    if (cancellation?.materialized) {
+      return
     }
 
-    const abortController = this.abortControllers.get(invokeId)
+    if (cancellation) {
+      // The request has not arrived yet. Keep the latest reason for the first
+      // request/end/error frame that materializes this cancelled invoke.
+      cancellation.reason = reason
+    }
+    else {
+      // No active state means abort won the race and must be remembered without
+      // starting the handler. Active state means the handler/stream is already
+      // running and this abort is recorded before it is cancelled below.
+      const isActive = abortController !== undefined || streamController !== undefined
+      this.invokeCancelStates.set(invokeId, {
+        materialized: isActive,
+        reason: isActive ? undefined : reason,
+      })
+    }
+
+    // Bound cancellation state for aborts whose request never arrives. Keep
+    // insertion order so pressure evicts the oldest correlation record.
+    while (this.invokeCancelStates.size > this.maxCancelStates) {
+      const oldest = this.invokeCancelStates.keys().next()
+      if (oldest.done) {
+        break
+      }
+      this.invokeCancelStates.delete(oldest.value)
+    }
+
     if (abortController) {
       this.scheduleAbort(abortController, reason)
     }
 
-    const streamController = this.streamControllers.get(invokeId)
-    if (streamController) {
-      streamController.error(createAbortError(reason))
-      this.streamControllers.delete(invokeId)
+    if (!streamController) {
+      return
     }
+
+    streamController.error(createAbortError(reason))
+    this.streamControllers.delete(invokeId)
   }
 
   complete(invokeId: string): void {
     this.abortControllers.delete(invokeId)
-    if (this.abortReasons.has(invokeId)) {
-      this.streamControllers.delete(invokeId)
-      return
-    }
-    this.materializedInvocations.delete(invokeId)
   }
 
   dispose(): void {
@@ -154,10 +192,11 @@ export class InvokeState<Req> {
       this.streamControllers.delete(invokeId)
       return true
     }
-    if (!this.abortReasons.has(invokeId)) {
+    const cancellation = this.invokeCancelStates.get(invokeId)
+    if (!cancellation) {
       return false
     }
-    controller.error(createAbortError(this.abortReasons.get(invokeId)))
+    controller.error(createAbortError(cancellation.reason))
     this.streamControllers.delete(invokeId)
     return true
   }
