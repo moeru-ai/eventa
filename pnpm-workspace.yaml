@@ -9,7 +9,7 @@ catalog:
   '@electron-toolkit/preload': ^3.0.2
   '@moeru/std': 0.1.0-beta.20
   '@tauri-apps/api': ^2.12.4
-  '@types/node': ^25.9.3
+  '@types/node': ^25.9.9
   '@types/picomatch': ^4.0.3
   '@vitest/browser-playwright': ^5.0.5
   '@vitest/coverage-v8': ^5.0.5
@@ -19,7 +19,7 @@ catalog:
   eslint: ^10.13.0
   hono: ^4.13.13
   nanoid: ^6.0.2
-  picomatch: ^4.0.4
+  picomatch: ^4.0.7
   playwright: ^1.64.1
   taze: ^21.3.0
   tsdown: ^0.23.1
