@@ -61,6 +61,9 @@ export function createGlobalContext(options?: H3GlobalAdapterOptions): {
           void ctx.emit(wsErrorEvent, { error }, { raw: { message } }).catch(emitError => console.error('Failed to emit WebSocket parse error:', emitError))
         }
       },
+      drain() {},
+      ping() {},
+      pong() {},
     },
     context: ctx,
   }
