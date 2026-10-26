@@ -15,14 +15,14 @@ catalog:
   '@vitest/coverage-v8': ^5.0.5
   '@vitest/web-worker': ^5.0.5
   bumpp: ^12.3.0
-  crossws: ^0.4.15
+  crossws: ^0.4.16
   eslint: ^10.13.0
   hono: ^4.13.13
   nanoid: ^6.0.2
   picomatch: ^4.0.7
   playwright: ^1.64.1
   taze: ^21.3.0
-  tsdown: ^0.23.1
+  tsdown: ^0.23.2
   tsx: ^4.23.15
   typescript: ^6.0.3
   unplugin-unused: ^0.6.0
