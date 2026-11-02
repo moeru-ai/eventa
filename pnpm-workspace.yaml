@@ -16,7 +16,7 @@ catalog:
   '@vitest/web-worker': ^5.0.5
   bumpp: ^12.3.0
   crossws: ^0.4.17
-  eslint: ^10.13.0
+  eslint: ^10.14.0
   hono: ^4.13.14
   nanoid: ^6.0.2
   picomatch: ^4.0.7
