@@ -201,8 +201,8 @@ catalogs:
       specifier: ^10.14.0
       version: 10.14.0
     hono:
-      specifier: ^4.13.14
-      version: 4.13.14
+      specifier: ^4.13.16
+      version: 4.13.16
     nanoid:
       specifier: ^6.0.2
       version: 6.0.2
@@ -292,7 +292,7 @@ importers:
         version: 10.14.0(jiti@2.6.1)(supports-color@7.2.0)
       hono:
         specifier: 'catalog:'
-        version: 4.13.14
+        version: 4.13.16
       playwright:
         specifier: 'catalog:'
         version: 1.64.1
@@ -2030,8 +2030,8 @@ packages:
     resolution: {integrity: sha512-iZyKG96/JwPz1N55vj2Ie2vXbhu440zfUfJvSwEqEbeLluk7NnapfGqa7LH0mOsnDxTF85Mx8/dyR6HfqcbmbQ==}
     engines: {node: '>=20'}
 
-  hono@4.13.14:
-    resolution: {integrity: sha512-yhRLQ21U6qa9Hsu2N7Qcbh8tE+WKEcoErjIo56LeSGiGXGp9sA7UpE86Ui9uexb61KakiGwuHMn2QdV7w6i6kQ==}
+  hono@4.13.16:
+    resolution: {integrity: sha512-AOLOEhvrV+iH92xXCnFr/5+3KjPKcI3xP63XJtX5spAnkznPdHijlIsUTpi7/9EhWqrTCekw5c5zh1K+YsVw7A==}
     engines: {node: '>=16.9.0'}
 
   hookable@6.1.2:
@@ -4769,7 +4769,7 @@ snapshots:
     dependencies:
       hookified: 1.15.1
 
-  hono@4.13.14: {}
+  hono@4.13.16: {}
 
   hookable@6.1.2: {}
 
