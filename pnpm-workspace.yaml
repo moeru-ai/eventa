@@ -17,7 +17,7 @@ catalog:
   bumpp: ^12.3.0
   crossws: ^0.4.17
   eslint: ^10.14.0
-  hono: ^4.13.16
+  hono: ^4.13.17
   nanoid: ^6.0.2
   picomatch: ^4.0.7
   playwright: ^1.65.0
