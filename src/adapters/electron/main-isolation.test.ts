@@ -122,6 +122,20 @@ describe('electron window isolation', () => {
     ownerMain.dispose()
   })
 
+  it('shares one close listener among the adapters of a window', async () => {
+    // Node warns when one window has more than 10 `closed` listeners.
+    // An app can create more than 10 isolated adapters for one window.
+    const adapters = Array.from({ length: 3 }, () => createContext(ipcMain, owner.window, { onlySameWindow: true }))
+    expect(owner.window.listenerCount('closed')).toBe(1)
+    adapters[0].dispose()
+    expect(owner.window.listenerCount('closed')).toBe(1)
+    const rejected = adapters.slice(1).map(adapter => expect(defineInvoke(adapter.context, defineInvokeEventa<string>())()).rejects.toThrow('window closed'))
+    owner.close()
+    await Promise.all(rejected)
+    expect(owner.window.listenerCount('closed')).toBe(0)
+    expect(ipcMain.listenerCount('eventa-message')).toBe(0)
+  })
+
   it('delivers response streams only through the requesting window', async () => {
     const foreignMain = createContext(ipcMain, foreign.window, { onlySameWindow: true })
     const ownerMain = createContext(ipcMain, owner.window, { onlySameWindow: true })
