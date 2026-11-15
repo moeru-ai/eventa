@@ -12,6 +12,43 @@ function withRemoval(ipcMain: IpcMain, type: string, listener: Parameters<IpcMai
   return { remove: () => ipcMain.off(type, listener) }
 }
 
+interface WindowClosedListener {
+  disposers: Set<() => void>
+  onClosed: () => void
+}
+
+/**
+ * The `closed` listener of each window that has isolated adapters.
+ * One listener per window keeps many adapters below the `MaxListenersExceededWarning` limit of Node.
+ */
+const windowClosedListeners = new WeakMap<BrowserWindow, WindowClosedListener>()
+
+function addWindowClosedDisposer(window: BrowserWindow, dispose: () => void) {
+  const existing = windowClosedListeners.get(window)
+  if (existing) {
+    existing.disposers.add(dispose)
+    return
+  }
+
+  const disposers = new Set([dispose])
+  function onClosed() {
+    // Each disposer removes itself. Without this entry, the removal does nothing.
+    windowClosedListeners.delete(window)
+    disposers.forEach(disposer => disposer())
+  }
+  windowClosedListeners.set(window, { disposers, onClosed })
+  window.once('closed', onClosed)
+}
+
+function removeWindowClosedDisposer(window: BrowserWindow, dispose: () => void) {
+  const listener = windowClosedListeners.get(window)
+  if (!listener?.disposers.delete(dispose) || listener.disposers.size > 0) {
+    return
+  }
+  windowClosedListeners.delete(window)
+  window.off('closed', listener.onClosed)
+}
+
 /** Creates an Eventa Context backed by Electron main-process IPC. */
 export interface ElectronMainAdapterOptions {
   /** Delivery deduplication and hop policy for the created Context. */
@@ -149,7 +186,7 @@ export function createContext(ipcMain: IpcMain, window?: BrowserWindow, options?
     ctx.abort(reason ?? new Error('eventa: invoke cancelled, electron main ipc disposed'))
     cleanupRemoval.forEach(removal => removal.remove())
     if (boundWindow) {
-      boundWindow.off('closed', onWindowClosed)
+      removeWindowClosedDisposer(boundWindow, onWindowClosed)
     }
   }
 
@@ -158,7 +195,7 @@ export function createContext(ipcMain: IpcMain, window?: BrowserWindow, options?
   }
 
   if (boundWindow) {
-    boundWindow.once('closed', onWindowClosed)
+    addWindowClosedDisposer(boundWindow, onWindowClosed)
   }
 
   return { context: ctx, dispose }

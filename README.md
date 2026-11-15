@@ -233,6 +233,7 @@ Eventa comes with various adapters for common use scenarios across browsers and 
      This includes errors, extra listeners, RPC replies, stream frames, and cancellation.
      The window must be live. Closing it disposes the adapter and rejects pending calls.
      Call `dispose()` to release the adapter earlier.
+     All isolated adapters of one window share one `closed` listener on that window.
 
      The option defaults to `false`. Without it, a window selects the send target but does not restrict incoming IPC.
      Code that previously enabled this option to filter replies now also filters incoming messages.
