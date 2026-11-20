@@ -120,10 +120,10 @@
     "up": "taze -w -r -I -f && pnpm prune && pnpm dedupe"
   },
   "peerDependencies": {
-    "@tauri-apps/api": ">=2.12.4",
+    "@tauri-apps/api": ">=2.12.5",
     "electron": ">=39",
     "h3": ">=2.0.8",
-    "hono": ">=4.13.18",
+    "hono": ">=4.13.19",
     "web-worker": "^1.5.0"
   },
   "peerDependenciesMeta": {

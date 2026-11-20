@@ -183,8 +183,8 @@ catalogs:
       specifier: 0.1.0-beta.20
       version: 0.1.0-beta.20
     '@tauri-apps/api':
-      specifier: ^2.12.4
-      version: 2.12.4
+      specifier: ^2.12.5
+      version: 2.12.5
     '@types/node':
       specifier: ^26.6.6
       version: 26.6.6
@@ -210,8 +210,8 @@ catalogs:
       specifier: ^10.15.0
       version: 10.15.0
     hono:
-      specifier: ^4.13.18
-      version: 4.13.18
+      specifier: ^4.13.19
+      version: 4.13.19
     nanoid:
       specifier: ^6.0.2
       version: 6.0.2
@@ -274,7 +274,7 @@ importers:
         version: 0.1.0-beta.20
       '@tauri-apps/api':
         specifier: 'catalog:'
-        version: 2.12.4
+        version: 2.12.5
       '@types/node':
         specifier: 'catalog:'
         version: 26.6.6
@@ -301,7 +301,7 @@ importers:
         version: 10.15.0(jiti@2.6.1)(supports-color@7.2.0)
       hono:
         specifier: 'catalog:'
-        version: 4.13.18
+        version: 4.13.19
       playwright:
         specifier: 'catalog:'
         version: 1.65.1
@@ -1121,8 +1121,8 @@ packages:
     resolution: {integrity: sha512-4BAffykYOgO+5nzBWYwE3W90sBgLJoUPRWWcL8wlyiM8IB8ipJz3UMJ9KXQd1RKQXpKp8Tutn80HZtWsu2u76w==}
     engines: {node: '>=10'}
 
-  '@tauri-apps/api@2.12.4':
-    resolution: {integrity: sha512-pVmfis+4zT8H0Qhp3xPZx9Ju7kpzvA6rr/PSJPyuwfvucTQ8sVt61NYU9KMkK703UFlYadFmjKA4HhybOtN0gg==}
+  '@tauri-apps/api@2.12.5':
+    resolution: {integrity: sha512-G9QIMt5fzED+aS4QhVK3w1HWLKpLIwH/MnpCr9z1ugGEHnS2ORmqrLkc0uALOjRK4qXJy+4Yiw8LDl/KicC1Hg==}
 
   '@tybys/wasm-util@0.10.4':
     resolution: {integrity: sha512-W3c4gRigFS0T/Ma4qIYF3GDAc5AQdHb1yL5znJT1Zv1YaD9Kitx656wBjvr19qbiosmZT8lWDM5BEMynUqX65A==}
@@ -2018,8 +2018,8 @@ packages:
     resolution: {integrity: sha512-iZyKG96/JwPz1N55vj2Ie2vXbhu440zfUfJvSwEqEbeLluk7NnapfGqa7LH0mOsnDxTF85Mx8/dyR6HfqcbmbQ==}
     engines: {node: '>=20'}
 
-  hono@4.13.18:
-    resolution: {integrity: sha512-H9q/E1XizaWstJxUW881dmLxEj+t/TrGGnyxINkm4+sK0qUwsMtFdo2BWI9Vs3cIS19MU6b6iCijoUoEf4f3DA==}
+  hono@4.13.19:
+    resolution: {integrity: sha512-KmXvQAXwcAHV+muzbIwoJ23niEB5nMoDVr9WcRkU8mvjUECm/1+7v4Jgp7P7a+H6MLFrh+vXrGonGrGS+RQfkA==}
     engines: {node: '>=16.9.0'}
 
   hookable@6.1.2:
@@ -3742,7 +3742,7 @@ snapshots:
     dependencies:
       defer-to-connect: 2.0.1
 
-  '@tauri-apps/api@2.12.4': {}
+  '@tauri-apps/api@2.12.5': {}
 
   '@tybys/wasm-util@0.10.4':
     dependencies:
@@ -4762,7 +4762,7 @@ snapshots:
     dependencies:
       hookified: 1.15.1
 
-  hono@4.13.18: {}
+  hono@4.13.19: {}
 
   hookable@6.1.2: {}
 
