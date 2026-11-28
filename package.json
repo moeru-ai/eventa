@@ -123,7 +123,7 @@
     "@tauri-apps/api": ">=2.12.5",
     "electron": ">=39",
     "h3": ">=2.0.8",
-    "hono": ">=4.13.21",
+    "hono": ">=4.13.22",
     "web-worker": "^1.5.0"
   },
   "peerDependenciesMeta": {
